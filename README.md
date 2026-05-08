@@ -16,13 +16,13 @@ Most individual investors only see price after the damage has already happened. 
 
 ## Why SoSoValue Is Essential
 
-| Integration | Role | Wave |
-| --- | --- | --- |
-| SoSoValue Terminal API | Market intelligence, ETF flow pressure, macro signals, volatility, sentiment, and composite regime detection | Wave 2 |
-| SSI Protocol | Portfolio holdings, index exposure, NAV data, and rebalance context | Wave 2 |
-| SoDEX | Hedge quotes, orderbook execution, and order status tracking | Wave 2 |
-| ValueChain | On-chain position verification and settlement confirmation | Wave 3 |
-| AI Reasoning Engine | Transparent decision trace; deterministic in Wave 1, optional LLM upgrade later | Wave 1+ |
+| Integration | Role |
+| --- | --- |
+| SoSoValue Terminal API | Market intelligence, ETF flow pressure, macro signals, volatility, sentiment, and composite regime detection |
+| SSI Protocol | Portfolio holdings, index exposure, NAV data, and rebalance context |
+| SoDEX | Hedge quotes, orderbook execution, and order status tracking |
+| ValueChain | On-chain position verification and settlement confirmation |
+| AI Reasoning Engine | Transparent decision trace; deterministic in Wave 1, optional LLM upgrade later |
 
 
 ## Architecture
