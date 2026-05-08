@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  background: #030303;
+  --grad-hero: radial-gradient(
+    ellipse 80% 60% at 50% -10%,
+    rgba(20, 48, 20, 0.55) 0%,
+    rgba(3, 3, 3, 0) 65%
+  );
+  --grad-section-alt: radial-gradient(
+    ellipse 70% 50% at 50% 100%,
+    rgba(12, 30, 12, 0.45) 0%,
+    rgba(5, 5, 5, 0) 65%
+  );
+  --grad-cta: radial-gradient(
+    ellipse 60% 70% at 50% 50%,
+    rgba(156, 255, 0, 0.055) 0%,
+    rgba(3, 3, 3, 0) 70%
+  );
+  --grad-card-ambient: radial-gradient(
+    ellipse 100% 100% at 50% 0%,
+    rgba(18, 40, 18, 0.3) 0%,
+    transparent 70%
+  );
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #030303;
+  color: #ffffff;
+  font-family: var(--font-manrope);
+}
+
+::selection {
+  background: rgba(156, 255, 0, 0.24);
+  color: #ffffff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #080808;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+}
+
+input[type='range'] {
+  accent-color: #9cff00;
+}
+
+.terminal-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.45) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.45) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(circle at center, black, transparent 70%);
+}
