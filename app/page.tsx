@@ -110,7 +110,7 @@ function LogoMark() {
 }
 
 const headlineLine1 = ['Your', 'Personal'];
-const headlineLine2 = ['Hedge', 'Agent', 'Fund'];
+const headlineLine2 = ['Hedge', 'Fund', 'Agent'];
 
 function AnimatedHeadline() {
   const reducedMotion = useReducedMotionPreference();
