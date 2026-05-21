@@ -39,7 +39,6 @@ export interface SoSoValueFetchResult {
   btcSnapshot: BtcSnapshot;
   errors: ProviderError[];
   lastUpdated: string;
-  lastUpdated: string;
   cacheAgeSeconds?: number;
   fetchLatencyMs?: number;
   responseSizeBytes?: number;
