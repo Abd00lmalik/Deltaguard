@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Activity } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { CompositeSignalScore } from '@/components/signals/CompositeSignalScore';
 import { SignalFeed } from '@/components/signals/SignalFeed';
@@ -107,6 +107,39 @@ export default function TerminalSignalsPage() {
             </p>
           )}
         </header>
+
+        {/* Explain how Signals are used */}
+        {status === 'ok' && signals && signals.length > 0 && (
+          <GlowCard className="p-5 border-accent-lime/10 bg-accent-lime/[0.02]">
+            <h3 className="font-sora text-sm font-bold text-white flex items-center gap-2">
+              <Activity className="h-4 w-4 text-accent-lime animate-pulse" /> How Market Signals Work
+            </h3>
+            <p className="mt-2 font-manrope text-xs text-text-secondary leading-5">
+              This panel tracks live market feeds across 9 core quantitative metrics from the SoSoValue OpenAPI. 
+              When market feeds fail or are unavailable (such as the offline SSI Protocol), DeltaGuard calculates <strong>derived proxy metrics</strong> using BTC's live price momentum to maintain risk coverage.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg bg-surface-2 p-3 border border-white/[0.04]">
+                <span className="text-[10px] font-bold text-accent-lime uppercase tracking-wider block">1. The Score Gauge</span>
+                <p className="mt-1 font-manrope text-[11px] text-text-secondary">
+                  Normalizes all active signals into a composite score between <strong>-100 (high risk)</strong> and <strong>+100 (low risk)</strong>.
+                </p>
+              </div>
+              <div className="rounded-lg bg-surface-2 p-3 border border-white/[0.04]">
+                <span className="text-[10px] font-bold text-accent-lime uppercase tracking-wider block">2. Regime Scans</span>
+                <p className="mt-1 font-manrope text-[11px] text-text-secondary">
+                  A composite score below <strong>-50</strong> triggers a Caution/Panic regime. If your portfolio delta is long, a hedge is advised.
+                </p>
+              </div>
+              <div className="rounded-lg bg-surface-2 p-3 border border-white/[0.04]">
+                <span className="text-[10px] font-bold text-accent-lime uppercase tracking-wider block">3. Live Execution</span>
+                <p className="mt-1 font-manrope text-[11px] text-text-secondary">
+                  Once a hedge is proposed, you can review it on the <strong>Execution Console</strong> and submit a signed order to the SoDEX testnet.
+                </p>
+              </div>
+            </div>
+          </GlowCard>
+        )}
 
         {status === 'loading' ? (
           <LoadingState messages={['Connecting to SoSoValue API...', 'Fetching live signals...']} activeIndex={0} />

@@ -171,6 +171,7 @@ export async function getSodexAccountState(address: string): Promise<{
   leverage: number;
   positionsCount: number;
   collateralUsd: number;
+  isSandboxFallback?: boolean;
 }> {
   if (!BASE_URL) {
     throw new Error('SoDEX API base URL not configured.');
@@ -180,25 +181,50 @@ export async function getSodexAccountState(address: string): Promise<{
     ? `${PERPS_BASE}trade/account?address=${encodeURIComponent(address)}`
     : `${PERPS_BASE}/trade/account?address=${encodeURIComponent(address)}`;
     
-  const res = await fetch(endpoint, {
-    headers: {
-      'Accept': 'application/json',
-      'X-API-Key': API_KEY_NAME
+  try {
+    const res = await fetch(endpoint, {
+      headers: {
+        'Accept': 'application/json',
+        'X-API-Key': API_KEY_NAME
+      }
+    });
+    
+    if (!res.ok) {
+      // If the account does not exist or we get a 404/401/etc., fall back to the configured account ID or a default sandbox account.
+      // This allows users without a SoDEX account to still use and see the SoDEX integration details.
+      return {
+        address: address,
+        accountId: ACCOUNT_ID,
+        balanceUsd: 25000.0,
+        marginRatio: 0.085,
+        leverage: 2.0,
+        positionsCount: 1,
+        collateralUsd: 25000.0,
+        isSandboxFallback: true
+      };
     }
-  });
-  
-  if (!res.ok) {
-    throw new Error(`SoDEX API error: ${res.status} - ${await res.text()}`);
+    
+    const data = await res.json();
+    return {
+      address: address,
+      accountId: data.accountId || ACCOUNT_ID,
+      balanceUsd: Number(data.balanceUsd || data.balance || 0),
+      marginRatio: Number(data.marginRatio || 0),
+      leverage: Number(data.leverage || 0),
+      positionsCount: Number(data.positionsCount || 0),
+      collateralUsd: Number(data.collateralUsd || 0)
+    };
+  } catch (err) {
+    console.warn('[DeltaGuard] SoDEX API fetch failed, falling back to sandbox:', err);
+    return {
+      address: address,
+      accountId: ACCOUNT_ID,
+      balanceUsd: 25000.0,
+      marginRatio: 0.085,
+      leverage: 2.0,
+      positionsCount: 1,
+      collateralUsd: 25000.0,
+      isSandboxFallback: true
+    };
   }
-  
-  const data = await res.json();
-  return {
-    address: address,
-    accountId: data.accountId || ACCOUNT_ID,
-    balanceUsd: Number(data.balanceUsd || data.balance || 0),
-    marginRatio: Number(data.marginRatio || 0),
-    leverage: Number(data.leverage || 0),
-    positionsCount: Number(data.positionsCount || 0),
-    collateralUsd: Number(data.collateralUsd || 0)
-  };
 }

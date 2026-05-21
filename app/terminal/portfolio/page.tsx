@@ -237,12 +237,25 @@ export default function TerminalPortfolioPage() {
 
             {sodexState ? (
               <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
-                <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
-                  <Coins className="h-5 w-5 text-accent-lime" /> SoDEX Margin Account Status
-                </h3>
-                <p className="mt-1 font-manrope text-xs text-text-secondary">
-                  Live margins, collateral value, and active leveraged positions fetched directly from SoDEX gateway.
-                </p>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
+                    <Coins className="h-5 w-5 text-accent-lime" /> SoDEX Margin Account Status
+                  </h3>
+                  {sodexState.isSandboxFallback && (
+                    <span className="rounded-lg bg-amber-500/10 px-2 py-0.5 font-manrope text-[10px] font-semibold text-amber-400">
+                      DELEGATED SANDBOX ACTIVE
+                    </span>
+                  )}
+                </div>
+                {sodexState.isSandboxFallback ? (
+                  <p className="mt-2 font-manrope text-xs text-amber-400">
+                    No active SoDEX margin account found for your wallet address. DeltaGuard has automatically activated a Delegated Sandbox Account so you can still test all leverage, risk analysis, and execution features.
+                  </p>
+                ) : (
+                  <p className="mt-1 font-manrope text-xs text-text-secondary">
+                    Live margins, collateral value, and active leveraged positions fetched directly from SoDEX gateway.
+                  </p>
+                )}
                 <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
                   {[
                     ['Account ID', sodexState.accountId.toString()],

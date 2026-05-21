@@ -10,6 +10,7 @@ interface SodexAccountState {
   leverage: number;
   positionsCount: number;
   collateralUsd: number;
+  isSandboxFallback?: boolean;
 }
 
 export function useWalletPortfolio() {
