@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { RefreshCw, CheckCircle, XCircle, AlertCircle, Activity, Server, Database, Globe, ArrowDownToLine, Zap } from 'lucide-react';
+import { RefreshCw, Activity, Server, Database, Globe, ArrowDownToLine, Zap } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { PillButton } from '@/components/ui/PillButton';
 import { SectionLabel } from '@/components/ui/SectionLabel';

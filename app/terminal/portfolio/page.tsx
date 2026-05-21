@@ -74,7 +74,7 @@ export default function TerminalPortfolioPage() {
         }
       });
 
-      const win = typeof window !== 'undefined' ? (window as any) : undefined;
+      const win = typeof window !== 'undefined' ? (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<string> } }) : undefined;
       if (win?.ethereum && walletAddress) {
         const signature = await win.ethereum.request({
           method: 'eth_signTypedData_v4',

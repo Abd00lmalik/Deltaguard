@@ -104,7 +104,7 @@ export function useWalletPortfolio() {
     setConnecting(true);
     setWalletError(null);
     try {
-      const win = typeof window !== 'undefined' ? (window as any) : undefined;
+      const win = typeof window !== 'undefined' ? (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<string[]> } }) : undefined;
       if (win?.ethereum) {
         const accounts = await win.ethereum.request({ method: 'eth_requestAccounts' });
         if (accounts && accounts[0]) {
@@ -126,7 +126,7 @@ export function useWalletPortfolio() {
     }
   };
 
-  const handleWatchAddressSubmit = (watchAddressInput: string, setErrorForm: (err: any) => void) => {
+  const handleWatchAddressSubmit = (watchAddressInput: string, setErrorForm: (err: { error: string; code?: string; setup?: string } | null) => void) => {
     if (!watchAddressInput.startsWith('0x') || watchAddressInput.length !== 42) {
       setErrorForm({ error: 'Invalid Ethereum address. Must start with 0x and be 42 characters long.' });
       return;

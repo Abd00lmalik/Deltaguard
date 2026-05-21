@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowUpRight, RefreshCw, Zap } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Topbar } from '@/components/layout/Topbar';
 import { DGMetricCard } from '@/components/ui/MetricCard';
@@ -14,7 +14,6 @@ import { RiskScoreGauge } from '@/components/ui/RiskScoreGauge';
 import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
 import { SignalOverview } from '@/components/dashboard/SignalOverview';
 import { HedgeProposalCard } from '@/components/agent/HedgeProposalCard';
-import { ExecutionTimeline } from '@/components/execution/ExecutionTimeline';
 import { formatCurrency } from '@/lib/utils/format';
 import { staggerContainer, staggerItem, slideInRight } from '@/lib/utils/motion';
 import type { AgentReasoningOutput } from '@/types/agent';
