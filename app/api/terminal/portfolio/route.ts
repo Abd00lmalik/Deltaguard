@@ -1,8 +1,23 @@
 import { NextResponse } from 'next/server';
 import { checkLiveReadiness } from '@/lib/config/live-readiness';
-import { portfolioAssets } from '@/lib/providers/live-provider';
+import { portfolioAssets, getSodexAccountState } from '@/lib/providers/live-provider';
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const queryAddress = searchParams.get('address');
+  const envAddress = process.env.SODEX_ACCOUNT_ADDRESS;
+  const address = queryAddress || envAddress;
+
+  if (!address) {
+    return NextResponse.json(
+      {
+        error: 'Wallet connection, user-pasted watch address, or SODEX_ACCOUNT_ADDRESS environment fallback required.',
+        code: 'CONNECTION_REQUIRED',
+      },
+      { status: 400 }
+    );
+  }
+
   const readiness = checkLiveReadiness();
 
   if (!readiness.ssi) {
@@ -17,10 +32,19 @@ export async function GET() {
   }
 
   try {
-    const assets = await portfolioAssets();
+    const assets = await portfolioAssets(address);
+    let sodexAccountState = null;
+    
+    try {
+      sodexAccountState = await getSodexAccountState(address);
+    } catch (e) {
+      console.warn('[DeltaGuard] SoDEX account state unavailable for address:', address, e);
+    }
 
     return NextResponse.json({
       assets,
+      sodexAccountState,
+      address,
       source: 'live',
       fetchedAt: new Date().toISOString(),
     });

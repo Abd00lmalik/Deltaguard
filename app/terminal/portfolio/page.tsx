@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, GitBranch, RefreshCw, Wallet, Coins, FileSignature } from 'lucide-react';
+import { AlertTriangle, GitBranch, RefreshCw, Wallet, Coins, FileSignature, Search, ShieldAlert } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { AllocationChart } from '@/components/portfolio/AllocationChart';
 import { ExposureChart } from '@/components/portfolio/ExposureChart';
@@ -13,12 +13,29 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { IntegrationStatusCard } from '@/components/integrations/IntegrationStatusCard';
 import type { PortfolioAsset } from '@/types/portfolio';
 
+interface SodexAccountState {
+  address: string;
+  accountId: number;
+  balanceUsd: number;
+  marginRatio: number;
+  leverage: number;
+  positionsCount: number;
+  collateralUsd: number;
+}
+
 export default function TerminalPortfolioPage() {
   const [walletConnected, setWalletConnected] = useState(false);
   const [walletAddress, setWalletAddress] = useState('');
+  const [addressSource, setAddressSource] = useState<'wallet' | 'watch' | 'env' | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
 
+  // Watch address input state
+  const [watchAddressInput, setWatchAddressInput] = useState('');
+
+  // Holdings & SoDEX account state
   const [assets, setAssets] = useState<PortfolioAsset[] | null>(null);
+  const [sodexState, setSodexState] = useState<SodexAccountState | null>(null);
   const [error, setError] = useState<{ error: string; code?: string; setup?: string } | null>(null);
   const [loadingHoldings, setLoadingHoldings] = useState(false);
 
@@ -28,17 +45,106 @@ export default function TerminalPortfolioPage() {
   const [signing, setSigning] = useState(false);
   const [signedPayload, setSignedPayload] = useState<string | null>(null);
 
-  // Initialize wallet connection state from localStorage
+  // Initialize wallet connection/watch state from localStorage
   useEffect(() => {
     const isConn = localStorage.getItem('dg_wallet_connected') === 'true';
     const addr = localStorage.getItem('dg_wallet_address') || '';
+    const src = localStorage.getItem('dg_address_source') as 'wallet' | 'watch' | 'env' | null;
     if (isConn && addr) {
       setWalletConnected(true);
       setWalletAddress(addr);
+      setAddressSource(src || 'wallet');
     }
   }, []);
 
-  async function loadPortfolio() {
+  async function loadPortfolio(addressToLoad?: string, source?: 'wallet' | 'watch' | 'env') {
+    setLoadingHoldings(true);
+    setError(null);
+    try {
+      const activeAddr = addressToLoad || walletAddress;
+      const url = activeAddr 
+        ? `/api/terminal/portfolio?address=${encodeURIComponent(activeAddr)}`
+        : `/api/terminal/portfolio`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data);
+      } else {
+        setAssets(data.assets ?? []);
+        if (data.sodexAccountState) {
+          setSodexState(data.sodexAccountState);
+        }
+        if (data.address) {
+          setWalletAddress(data.address);
+          setWalletConnected(true);
+          const activeSource = source || data.searchParams?.address ? 'watch' : 'env';
+          setAddressSource(activeSource);
+          localStorage.setItem('dg_wallet_connected', 'true');
+          localStorage.setItem('dg_wallet_address', data.address);
+          localStorage.setItem('dg_address_source', activeSource);
+        }
+      }
+    } catch {
+      setError({ error: 'Network error — could not reach portfolio endpoint.' });
+    } finally {
+      setLoadingHoldings(false);
+    }
+  }
+
+  // Load holdings automatically when wallet state is set
+  useEffect(() => {
+    if (walletConnected && walletAddress) {
+      void loadPortfolio(walletAddress, addressSource || 'wallet');
+    } else {
+      setAssets(null);
+      setSodexState(null);
+    }
+  }, [walletConnected, walletAddress, addressSource]);
+
+  async function connectWallet() {
+    setConnecting(true);
+    setWalletError(null);
+    try {
+      const win = typeof window !== 'undefined' ? (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<string[]> } }) : undefined;
+      if (win?.ethereum) {
+        const accounts = await win.ethereum.request({ method: 'eth_requestAccounts' });
+        if (accounts && accounts[0]) {
+          setWalletAddress(accounts[0]);
+          setAddressSource('wallet');
+          setWalletConnected(true);
+          localStorage.setItem('dg_wallet_connected', 'true');
+          localStorage.setItem('dg_wallet_address', accounts[0]);
+          localStorage.setItem('dg_address_source', 'wallet');
+        }
+      } else {
+        setWalletError('Web3 browser extension (MetaMask/Rabby) not found. Please install one or use the Paste/Watch Address option below.');
+      }
+    } catch (err) {
+      console.error('Wallet connection failed:', err);
+      setWalletError('Wallet connection rejected or failed.');
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  function handleWatchAddressSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!watchAddressInput.startsWith('0x') || watchAddressInput.length !== 42) {
+      setError({ error: 'Invalid Ethereum address. Must start with 0x and be 42 characters long.' });
+      return;
+    }
+    setError(null);
+    setWalletAddress(watchAddressInput);
+    setAddressSource('watch');
+    setWalletConnected(true);
+    localStorage.setItem('dg_wallet_connected', 'true');
+    localStorage.setItem('dg_wallet_address', watchAddressInput);
+    localStorage.setItem('dg_address_source', 'watch');
+  }
+
+  async function handleUseEnvFallback() {
     setLoadingHoldings(true);
     setError(null);
     try {
@@ -48,59 +154,38 @@ export default function TerminalPortfolioPage() {
         setError(data);
       } else {
         setAssets(data.assets ?? []);
+        if (data.sodexAccountState) {
+          setSodexState(data.sodexAccountState);
+        }
+        if (data.address) {
+          setWalletAddress(data.address);
+          setWalletConnected(true);
+          setAddressSource('env');
+          localStorage.setItem('dg_wallet_connected', 'true');
+          localStorage.setItem('dg_wallet_address', data.address);
+          localStorage.setItem('dg_address_source', 'env');
+        }
       }
     } catch {
-      setError({ error: 'Network error — could not reach portfolio endpoint.' });
+      setError({ error: 'Failed to fetch using environment fallback. Verify SODEX_ACCOUNT_ADDRESS is configured in your environment.' });
     } finally {
       setLoadingHoldings(false);
-    }
-  }
-
-  // Load holdings automatically when wallet is connected
-  useEffect(() => {
-    if (walletConnected) {
-      void loadPortfolio();
-    } else {
-      setAssets(null);
-    }
-  }, [walletConnected]);
-
-  async function connectWallet() {
-    setConnecting(true);
-    try {
-      const win = typeof window !== 'undefined' ? (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<string[]> } }) : undefined;
-      if (win?.ethereum) {
-        const accounts = await win.ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts && accounts[0]) {
-          setWalletAddress(accounts[0]);
-          setWalletConnected(true);
-          localStorage.setItem('dg_wallet_connected', 'true');
-          localStorage.setItem('dg_wallet_address', accounts[0]);
-        }
-      } else {
-        // Fallback simulation
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const mockAddr = '0x71C7656EC7ab88b098defB751B7401B5f6d1476B';
-        setWalletAddress(mockAddr);
-        setWalletConnected(true);
-        localStorage.setItem('dg_wallet_connected', 'true');
-        localStorage.setItem('dg_wallet_address', mockAddr);
-      }
-    } catch (err) {
-      console.error('Wallet connection failed:', err);
-    } finally {
-      setConnecting(false);
     }
   }
 
   function disconnectWallet() {
     setWalletConnected(false);
     setWalletAddress('');
+    setAddressSource(null);
+    setSodexState(null);
     localStorage.removeItem('dg_wallet_connected');
     localStorage.removeItem('dg_wallet_address');
+    localStorage.removeItem('dg_address_source');
     setClaimState('idle');
     setClaimTx('');
     setSignedPayload(null);
+    setWatchAddressInput('');
+    setWalletError(null);
   }
 
   async function claimFaucet() {
@@ -146,14 +231,14 @@ export default function TerminalPortfolioPage() {
       });
 
       const win = typeof window !== 'undefined' ? (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<string> } }) : undefined;
-      if (win?.ethereum && walletAddress) {
+      if (win?.ethereum && walletAddress && addressSource === 'wallet') {
         const signature = await win.ethereum.request({
           method: 'eth_signTypedData_v4',
           params: [walletAddress, msgParams]
         });
         setSignedPayload(signature);
       } else {
-        // Fallback simulation
+        // Fallback simulation for watch or env sources where window.ethereum is not connected/owned
         await new Promise((resolve) => setTimeout(resolve, 1200));
         setSignedPayload('0x' + Array.from({ length: 130 }, () => Math.floor(Math.random() * 16).toString(16)).join(''));
       }
@@ -171,7 +256,7 @@ export default function TerminalPortfolioPage() {
       <Topbar title="Portfolio" action={
         walletConnected ? (
           <div className="flex items-center gap-3">
-            <PillButton size="sm" variant="secondary" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={loadPortfolio} loading={loadingHoldings}>
+            <PillButton size="sm" variant="secondary" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => loadPortfolio()} loading={loadingHoldings}>
               Refresh
             </PillButton>
             <PillButton size="sm" variant="danger" onClick={disconnectWallet}>
@@ -194,22 +279,58 @@ export default function TerminalPortfolioPage() {
         </header>
 
         {!walletConnected ? (
-          <GlowCard glowing className="p-8 text-center max-w-2xl mx-auto border-white/[0.04] bg-neutral-900/40">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent-lime/10 text-accent-lime">
-              <Wallet className="h-7 w-7" />
-            </div>
-            <h3 className="mt-6 font-sora text-lg font-bold text-white">Wallet Connection Required</h3>
-            <p className="mt-2 mx-auto max-w-md font-manrope text-sm text-text-secondary">
-              Connect your Ethereum/EVM-compatible wallet to query live holdings from SSI Protocol, claim testnet tokens, and prepare for hedge order signing.
-            </p>
-            <div className="mt-6">
-              <PillButton onClick={connectWallet} loading={connecting}>
-                Connect Wallet
-              </PillButton>
-            </div>
-          </GlowCard>
+          <div className="max-w-2xl mx-auto space-y-6">
+            <GlowCard glowing className="p-8 text-center border-white/[0.04] bg-neutral-900/40">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-accent-lime/10 text-accent-lime">
+                <Wallet className="h-7 w-7" />
+              </div>
+              <h3 className="mt-6 font-sora text-lg font-bold text-white">Address Connection Required</h3>
+              <p className="mt-2 mx-auto max-w-md font-manrope text-sm text-text-secondary">
+                To retrieve live holdings from SSI Protocol and check SoDEX account state, please connect using one of the secure options below.
+              </p>
+
+              {walletError && (
+                <div className="mt-4 p-4 rounded-xl bg-danger-dim border border-danger/25 text-left flex gap-3">
+                  <ShieldAlert className="h-5 w-5 shrink-0 text-danger" />
+                  <p className="font-manrope text-xs text-text-secondary">{walletError}</p>
+                </div>
+              )}
+
+              <div className="mt-6 flex flex-wrap justify-center gap-4">
+                <PillButton onClick={connectWallet} loading={connecting}>
+                  Connect Web3 Wallet (MetaMask/Rabby)
+                </PillButton>
+                
+                <PillButton variant="secondary" onClick={handleUseEnvFallback}>
+                  Use Admin Environment Fallback
+                </PillButton>
+              </div>
+            </GlowCard>
+
+            <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
+              <h4 className="font-sora text-sm font-bold text-white flex items-center gap-2">
+                <Search className="h-4 w-4 text-accent-lime" /> Paste / Watch EVM Address
+              </h4>
+              <p className="mt-1.5 font-manrope text-xs text-text-secondary">
+                Paste any EVM compatible address to watch or inspect portfolio exposure and assets safely without a wallet provider.
+              </p>
+              
+              <form onSubmit={handleWatchAddressSubmit} className="mt-4 flex gap-3">
+                <input
+                  type="text"
+                  placeholder="0x..."
+                  value={watchAddressInput}
+                  onChange={(e) => setWatchAddressInput(e.target.value)}
+                  className="flex-1 bg-surface-2 border border-white/[0.08] rounded-xl px-4 py-2 text-sm font-mono text-white focus:outline-none focus:border-accent-lime/40 placeholder-text-muted"
+                />
+                <PillButton size="sm" type="submit">
+                  Query Address
+                </PillButton>
+              </form>
+            </GlowCard>
+          </div>
         ) : loadingHoldings ? (
-          <LoadingState messages={['Connecting to SSI Protocol...', 'Fetching live holdings...']} activeIndex={0} />
+          <LoadingState messages={['Connecting to SSI Protocol...', 'Fetching live holdings and SoDEX margins...']} activeIndex={0} />
         ) : error ? (
           <GlowCard className="border-danger/25 p-6">
             <div className="flex items-start gap-4">
@@ -223,11 +344,11 @@ export default function TerminalPortfolioPage() {
                   </p>
                 )}
                 <div className="mt-4 flex gap-3">
-                  <PillButton size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={loadPortfolio}>
+                  <PillButton size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => loadPortfolio()}>
                     Retry
                   </PillButton>
                   <PillButton size="sm" variant="danger" onClick={disconnectWallet}>
-                    Disconnect Wallet
+                    Disconnect Address
                   </PillButton>
                 </div>
               </div>
@@ -243,10 +364,15 @@ export default function TerminalPortfolioPage() {
                     <Wallet className="h-5 w-5" />
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    <h4 className="font-sora text-sm font-bold text-white">Connected Wallet Address</h4>
+                    <h4 className="font-sora text-sm font-bold text-white">
+                      {addressSource === 'wallet' && 'Connected Web3 Wallet'}
+                      {addressSource === 'watch' && 'Watch Address'}
+                      {addressSource === 'env' && 'Admin/Testing Environment Fallback'}
+                    </h4>
                     <p className="mt-1 font-mono text-xs text-text-secondary truncate">{walletAddress}</p>
                     <div className="mt-4 flex gap-2">
                       <StatusBadge variant="safe" label="Active Testnet Mode" />
+                      <StatusBadge variant="muted" label={addressSource || 'unknown'} />
                     </div>
                   </div>
                 </div>
@@ -283,6 +409,31 @@ export default function TerminalPortfolioPage() {
               </GlowCard>
             </div>
 
+            {/* SoDEX Account State Panel */}
+            {sodexState && (
+              <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
+                <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
+                  <Coins className="h-5 w-5 text-accent-lime" /> SoDEX Margin Account Status
+                </h3>
+                <p className="mt-1 font-manrope text-xs text-text-secondary">
+                  Live margins, collateral value, and active leveraged positions fetched directly from SoDEX gateway.
+                </p>
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    ['Account ID', sodexState.accountId.toString()],
+                    ['Net Value', `$${sodexState.balanceUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })}`],
+                    ['Leverage', `${sodexState.leverage}x`],
+                    ['Margin Ratio', `${(sodexState.marginRatio * 100).toFixed(2)}%`]
+                  ].map(([label, val]) => (
+                    <div key={label} className="bg-surface-2 border border-white/[0.05] rounded-xl p-3">
+                      <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">{label}</span>
+                      <p className="mt-1 font-sora text-base font-bold text-white">{val}</p>
+                    </div>
+                  ))}
+                </div>
+              </GlowCard>
+            )}
+
             {/* Signed Execution Action */}
             <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -297,7 +448,7 @@ export default function TerminalPortfolioPage() {
                 <div>
                   {!signedPayload ? (
                     <PillButton size="sm" onClick={signExecutionPayload} loading={signing}>
-                      Sign EIP-712 Payload
+                      {addressSource === 'wallet' ? 'Sign EIP-712 Payload' : 'Generate Simulated Payload'}
                     </PillButton>
                   ) : (
                     <div className="text-right space-y-1">

@@ -17,4 +17,5 @@ export {
   placeOrder as submitOrder,
   getOrderStatus,
   cancelOrder,
+  getSodexAccountState,
 } from '@/lib/integrations/sodex/server-client';
