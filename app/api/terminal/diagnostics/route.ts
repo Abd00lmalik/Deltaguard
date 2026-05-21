@@ -89,10 +89,8 @@ export async function GET() {
       error:             sodexData?.error ?? null,
     },
     sodexSigned: {
-      accountId:              process.env.SODEX_ACCOUNT_ID ?? null,
-      accountAddress:         process.env.SODEX_ACCOUNT_ADDRESS ?? null,
+      accountId:              'DYNAMIC (Fetched per user)',
       credentialsPresent:     Boolean(process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY),
-      accountInitialized:     Boolean(process.env.SODEX_ACCOUNT_ID && Number(process.env.SODEX_ACCOUNT_ID) > 0),
     },
     database: {
       status:             process.env.DATABASE_URL ? 'configured' : 'not_configured',

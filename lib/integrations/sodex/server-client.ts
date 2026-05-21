@@ -6,7 +6,6 @@ import type { SoDEXOrderResponse } from './types';
 const BASE_URL = process.env.SODEX_BASE_URL ?? '';
 const API_KEY_NAME = process.env.SODEX_API_KEY ?? 'api-key-01';
 const PRIVATE_KEY = process.env.SODEX_API_PRIVATE_KEY ?? '';
-const ACCOUNT_ID = Number(process.env.SODEX_ACCOUNT_ID ?? '12345');
 
 /**
  * Resolves the correct perps API base path.
@@ -53,13 +52,16 @@ interface SoDEXPayload {
   params: SoDEXParams;
 }
 
-export async function placeOrder(order: {
-  id: string;
-  pair: string;
-  direction: 'long' | 'short';
-  notionalUsd: number;
-  estimatedPrice: number;
-}): Promise<{ orderId: string; status: string; filledPrice?: number; filledAt?: string }> {
+export async function placeOrder(
+  order: {
+    id: string;
+    pair: string;
+    direction: 'long' | 'short';
+    notionalUsd: number;
+    estimatedPrice: number;
+  },
+  accountId: number
+): Promise<{ orderId: string; status: string; filledPrice?: number; filledAt?: string }> {
   if (!BASE_URL || !PRIVATE_KEY) {
     throw new Error('SoDEX credentials not configured for signing.');
   }
@@ -88,7 +90,7 @@ export async function placeOrder(order: {
 
   // 4. Build params and signing payload with exact field ordering
   const params: SoDEXParams = {
-    accountID: ACCOUNT_ID,
+    accountID: accountId,
     symbolID: symbolID,
     orders: [orderItem]
   };
@@ -181,50 +183,30 @@ export async function getSodexAccountState(address: string): Promise<{
     ? `${PERPS_BASE}trade/account?address=${encodeURIComponent(address)}`
     : `${PERPS_BASE}/trade/account?address=${encodeURIComponent(address)}`;
     
-  try {
-    const res = await fetch(endpoint, {
-      headers: {
-        'Accept': 'application/json',
-        'X-API-Key': API_KEY_NAME
-      }
-    });
-    
-    if (!res.ok) {
-      // If the account does not exist or we get a 404/401/etc., fall back to the configured account ID or a default sandbox account.
-      // This allows users without a SoDEX account to still use and see the SoDEX integration details.
-      return {
-        address: address,
-        accountId: ACCOUNT_ID,
-        balanceUsd: 25000.0,
-        marginRatio: 0.085,
-        leverage: 2.0,
-        positionsCount: 1,
-        collateralUsd: 25000.0,
-        isSandboxFallback: true
-      };
+  const res = await fetch(endpoint, {
+    headers: {
+      'Accept': 'application/json',
+      'X-API-Key': API_KEY_NAME
     }
-    
-    const data = await res.json();
-    return {
-      address: address,
-      accountId: data.accountId || ACCOUNT_ID,
-      balanceUsd: Number(data.balanceUsd || data.balance || 0),
-      marginRatio: Number(data.marginRatio || 0),
-      leverage: Number(data.leverage || 0),
-      positionsCount: Number(data.positionsCount || 0),
-      collateralUsd: Number(data.collateralUsd || 0)
-    };
-  } catch (err) {
-    console.warn('[DeltaGuard] SoDEX API fetch failed, falling back to sandbox:', err);
-    return {
-      address: address,
-      accountId: ACCOUNT_ID,
-      balanceUsd: 25000.0,
-      marginRatio: 0.085,
-      leverage: 2.0,
-      positionsCount: 1,
-      collateralUsd: 25000.0,
-      isSandboxFallback: true
-    };
+  });
+  
+  if (!res.ok) {
+    throw new Error(`SoDEX account lookup failed: HTTP ${res.status} - ${await res.text()}`);
   }
+  
+  const data = await res.json();
+  const accountIdVal = data.accountId || data.accountID;
+  if (!accountIdVal) {
+    throw new Error(`No active SoDEX margin account linked to address: ${address}`);
+  }
+
+  return {
+    address: address,
+    accountId: Number(accountIdVal),
+    balanceUsd: Number(data.balanceUsd || data.balance || 0),
+    marginRatio: Number(data.marginRatio || 0),
+    leverage: Number(data.leverage || 0),
+    positionsCount: Number(data.positionsCount || 0),
+    collateralUsd: Number(data.collateralUsd || 0)
+  };
 }

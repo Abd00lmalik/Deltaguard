@@ -80,11 +80,11 @@ export async function GET() {
     ? 'setup_required'
     : 'unavailable';
 
-  // SoDEX Signed — requires valid private key + account ID + working public connection
+  // SoDEX Signed — requires valid private key + API key credentials + working public connection
   const sodexSignedHealth: ProviderHealth =
-    process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID && sodexPublicHealth === 'connected'
+    process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY && sodexPublicHealth === 'connected'
       ? 'connected'
-      : process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID
+      : process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY
       ? 'degraded'
       : 'setup_required';
 

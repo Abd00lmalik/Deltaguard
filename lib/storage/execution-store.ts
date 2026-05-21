@@ -27,7 +27,7 @@ export interface ExecutionState {
 }
 
 // In-memory fallback for local development or when Vercel KV is not configured
-let inMemoryState: ExecutionState | null = null;
+const inMemoryStateMap: Record<string, ExecutionState> = {};
 
 function getInitialState(): ExecutionState {
   return {
@@ -38,7 +38,8 @@ function getInitialState(): ExecutionState {
   };
 }
 
-export async function getExecutionState(): Promise<ExecutionState> {
+export async function getExecutionState(address?: string | null): Promise<ExecutionState> {
+  const suffix = address ? `:${address.toLowerCase()}` : ':global';
   const isKvConfigured =
     process.env.EXECUTION_STORAGE_PROVIDER === 'kv' &&
     !!process.env.KV_REST_API_URL &&
@@ -46,7 +47,7 @@ export async function getExecutionState(): Promise<ExecutionState> {
 
   if (isKvConfigured) {
     try {
-      const url = `${process.env.KV_REST_API_URL}/get/execution_state`;
+      const url = `${process.env.KV_REST_API_URL}/get/execution_state${suffix}`;
       const res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${process.env.KV_REST_API_TOKEN}`
@@ -68,13 +69,15 @@ export async function getExecutionState(): Promise<ExecutionState> {
     }
   }
 
-  if (!inMemoryState) {
-    inMemoryState = getInitialState();
+  const key = suffix;
+  if (!inMemoryStateMap[key]) {
+    inMemoryStateMap[key] = getInitialState();
   }
-  return inMemoryState;
+  return inMemoryStateMap[key];
 }
 
-export async function setExecutionState(state: ExecutionState): Promise<void> {
+export async function setExecutionState(state: ExecutionState, address?: string | null): Promise<void> {
+  const suffix = address ? `:${address.toLowerCase()}` : ':global';
   const isKvConfigured =
     process.env.EXECUTION_STORAGE_PROVIDER === 'kv' &&
     !!process.env.KV_REST_API_URL &&
@@ -82,7 +85,7 @@ export async function setExecutionState(state: ExecutionState): Promise<void> {
 
   if (isKvConfigured) {
     try {
-      const url = `${process.env.KV_REST_API_URL}/set/execution_state`;
+      const url = `${process.env.KV_REST_API_URL}/set/execution_state${suffix}`;
       await fetch(url, {
         method: 'POST',
         headers: {
@@ -96,10 +99,11 @@ export async function setExecutionState(state: ExecutionState): Promise<void> {
     }
   }
 
-  inMemoryState = state;
+  inMemoryStateMap[suffix] = state;
 }
 
-export async function resetExecutionState(): Promise<void> {
+export async function resetExecutionState(address?: string | null): Promise<void> {
+  const suffix = address ? `:${address.toLowerCase()}` : ':global';
   const isKvConfigured =
     process.env.EXECUTION_STORAGE_PROVIDER === 'kv' &&
     !!process.env.KV_REST_API_URL &&
@@ -107,7 +111,7 @@ export async function resetExecutionState(): Promise<void> {
 
   if (isKvConfigured) {
     try {
-      const url = `${process.env.KV_REST_API_URL}/del/execution_state`;
+      const url = `${process.env.KV_REST_API_URL}/del/execution_state${suffix}`;
       await fetch(url, {
         method: 'POST',
         headers: {
@@ -119,5 +123,5 @@ export async function resetExecutionState(): Promise<void> {
     }
   }
 
-  inMemoryState = getInitialState();
+  delete inMemoryStateMap[suffix];
 }

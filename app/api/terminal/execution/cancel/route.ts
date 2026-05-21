@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getExecutionState, setExecutionState } from '@/lib/storage/execution-store';
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
-    const current = await getExecutionState();
+    const { searchParams } = new URL(request.url);
+    const address = searchParams.get('address');
+    
+    const current = await getExecutionState(address);
     const nowStr = new Date().toISOString();
     
     const cancelledState = {
@@ -20,7 +23,7 @@ export async function POST() {
       ]
     };
     
-    await setExecutionState(cancelledState);
+    await setExecutionState(cancelledState, address);
     return NextResponse.json(cancelledState);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to cancel execution';

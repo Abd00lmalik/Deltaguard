@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { AlertTriangle, CheckCircle, RefreshCw, XCircle } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { ExecutionTimeline } from '@/components/execution/ExecutionTimeline';
@@ -52,11 +52,22 @@ export default function TerminalExecutionPage() {
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [setupWarning, setSetupWarning] = useState<string[] | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
-  async function fetchStatus() {
+  useEffect(() => {
+    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
+    setWalletAddress(addr);
+  }, []);
+
+  const fetchStatus = useCallback(async (overrideAddr?: string | null) => {
+    const activeAddr = overrideAddr !== undefined ? overrideAddr : walletAddress;
+    if (!activeAddr) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
-      const res = await fetch('/api/terminal/execution/status');
+      const res = await fetch(`/api/terminal/execution/status?address=${encodeURIComponent(activeAddr)}`);
       const data = await res.json();
       setState(data as ExecutionState);
       setError(null);
@@ -65,13 +76,14 @@ export default function TerminalExecutionPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [walletAddress]);
 
   async function handleApprove() {
+    if (!walletAddress) return;
     setApproving(true);
     setSetupWarning(null);
     try {
-      const res = await fetch('/api/terminal/execution/approve', { method: 'POST' });
+      const res = await fetch(`/api/terminal/execution/approve?address=${encodeURIComponent(walletAddress)}`, { method: 'POST' });
       const data = await res.json();
       if (data.executionStopped) {
         setSetupWarning(data.setupRequired ?? []);
@@ -85,8 +97,9 @@ export default function TerminalExecutionPage() {
   }
 
   async function handleCancel() {
+    if (!walletAddress) return;
     try {
-      const res = await fetch('/api/terminal/execution/cancel', { method: 'POST' });
+      const res = await fetch(`/api/terminal/execution/cancel?address=${encodeURIComponent(walletAddress)}`, { method: 'POST' });
       const data = await res.json();
       setState(data as ExecutionState);
     } catch {
@@ -95,8 +108,9 @@ export default function TerminalExecutionPage() {
   }
 
   async function handleReset() {
+    if (!walletAddress) return;
     try {
-      const res = await fetch('/api/terminal/execution/reset', { method: 'POST' });
+      const res = await fetch(`/api/terminal/execution/reset?address=${encodeURIComponent(walletAddress)}`, { method: 'POST' });
       const data = await res.json();
       setState(data as ExecutionState);
       setSetupWarning(null);
@@ -106,10 +120,39 @@ export default function TerminalExecutionPage() {
     }
   }
 
-  useEffect(() => { void fetchStatus(); }, []);
+  useEffect(() => {
+    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
+    if (addr) {
+      void fetchStatus(addr);
+    } else {
+      setLoading(false);
+    }
+  }, [walletAddress, fetchStatus]);
 
   const phase = state?.phase ?? 'NONE';
   const order = state?.hedgeOrder;
+
+  if (!walletAddress) {
+    return (
+      <>
+        <Topbar title="Execution Console" />
+        <div className="space-y-6 p-4 pb-24 sm:p-6 lg:p-8">
+          <header>
+            <SectionLabel>SoDEX Live Execution</SectionLabel>
+            <h1 className="mt-3 font-sora text-2xl font-bold text-white">Execution Console</h1>
+            <p className="mt-2 max-w-2xl font-manrope text-sm leading-6 text-text-secondary">
+              Review and approve live hedge orders. All execution requires explicit user confirmation.
+            </p>
+          </header>
+          <EmptyState
+            title="Wallet Connection Required"
+            description="Please connect your Web3 wallet or configure a watch address on the portfolio page to view and authorize live executions."
+            action={<PillButton onClick={() => window.location.href = '/terminal/portfolio'}>Connect Wallet</PillButton>}
+          />
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -118,7 +161,7 @@ export default function TerminalExecutionPage() {
         action={
           <div className="flex items-center gap-2">
             <StatusBadge variant={phaseBadge(phase)} label={phase.replace(/_/g, ' ')} />
-            <PillButton size="sm" variant="secondary" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={fetchStatus}>
+            <PillButton size="sm" variant="secondary" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={() => fetchStatus()}>
               Refresh
             </PillButton>
           </div>
@@ -142,7 +185,7 @@ export default function TerminalExecutionPage() {
               <div>
                 <p className="font-sora text-base font-bold text-white">Execution State Error</p>
                 <p className="mt-2 font-manrope text-sm text-text-secondary">{error}</p>
-                <PillButton size="sm" className="mt-4" onClick={fetchStatus} icon={<RefreshCw className="h-3.5 w-3.5" />}>Retry</PillButton>
+                <PillButton size="sm" className="mt-4" onClick={() => fetchStatus()} icon={<RefreshCw className="h-3.5 w-3.5" />}>Retry</PillButton>
               </div>
             </div>
           </GlowCard>

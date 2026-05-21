@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     marketIntelligence: sosoData?.available === true,
     portfolioExposure:  ssiData?.available  === true,
     executionVenue:     Boolean(process.env.SODEX_BASE_URL),
-    signedExecution:    Boolean(process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID),
+    signedExecution:    Boolean(process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY),
   };
 
   const mode = determineAgentMode(capabilities);
