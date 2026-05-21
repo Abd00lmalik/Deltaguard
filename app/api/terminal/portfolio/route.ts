@@ -3,14 +3,14 @@ import { getSodexAccountState } from '@/lib/providers/live-provider';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const queryAddress = searchParams.get('address');
-  const envAddress = process.env.SODEX_ACCOUNT_ADDRESS;
-  const address = queryAddress || envAddress;
+  // Address must come from the user's connected wallet session (query param).
+  // Do NOT fall back to SODEX_ACCOUNT_ADDRESS — this is a multi-user app.
+  const address = searchParams.get('address');
 
   if (!address) {
     return NextResponse.json(
       {
-        error: 'Wallet connection, user-pasted watch address, or SODEX_ACCOUNT_ADDRESS environment fallback required.',
+        error: 'Wallet address required. Connect your Web3 wallet on the Portfolio page.',
         code: 'CONNECTION_REQUIRED',
       },
       { status: 400 }

@@ -24,14 +24,16 @@ import { type ProviderError } from '@/lib/types/signal-source';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
-  const walletAddress: string | null = body?.walletAddress
-    ?? process.env.SODEX_ACCOUNT_ADDRESS
-    ?? null;
+
+  // walletAddress MUST come from the user's connected wallet (sent in request body).
+  // Do NOT fall back to SODEX_ACCOUNT_ADDRESS here — this is a multi-user app.
+  // Each user connects their own wallet; the env var is only for admin/diagnostics.
+  const walletAddress: string | null = body?.walletAddress ?? null;
 
   if (!walletAddress) {
     return NextResponse.json(
       {
-        error: 'Web3 wallet connection or SODEX_ACCOUNT_ADDRESS environment fallback required.',
+        error: 'Wallet connection required. Connect your Web3 wallet on the Portfolio page before running a scan.',
         code: 'CONNECTION_REQUIRED',
       },
       { status: 400 }

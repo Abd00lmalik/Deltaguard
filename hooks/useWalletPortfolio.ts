@@ -104,23 +104,47 @@ export function useWalletPortfolio() {
     setConnecting(true);
     setWalletError(null);
     try {
-      const win = typeof window !== 'undefined' ? (window as unknown as { ethereum?: { request: (args: { method: string; params?: unknown[] }) => Promise<string[]> } }) : undefined;
-      if (win?.ethereum) {
-        const accounts = await win.ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts && accounts[0]) {
-          setWalletAddress(accounts[0]);
-          setAddressSource('wallet');
-          setWalletConnected(true);
-          localStorage.setItem('dg_wallet_connected', 'true');
-          localStorage.setItem('dg_wallet_address', accounts[0]);
-          localStorage.setItem('dg_address_source', 'wallet');
-        }
-      } else {
+      type EthereumProvider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
+      const ethereum = typeof window !== 'undefined'
+        ? (window as unknown as { ethereum?: EthereumProvider }).ethereum
+        : undefined;
+
+      if (!ethereum) {
         setWalletError('Web3 browser extension (MetaMask/Rabby) not found. Please install one or use the Paste/Watch Address option below.');
+        return;
+      }
+
+      // Force MetaMask to show the account picker every time — even if already connected.
+      // wallet_requestPermissions triggers the popup regardless of cached sessions,
+      // making this work correctly for multi-user scenarios where different users
+      // may share the same browser or switch accounts.
+      try {
+        await ethereum.request({
+          method: 'wallet_requestPermissions',
+          params: [{ eth_accounts: {} }]
+        });
+      } catch {
+        // User dismissed the permissions popup — treat as cancellation
+        setWalletError('Wallet connection cancelled. Please try again and approve in MetaMask.');
+        return;
+      }
+
+      // After permissions granted, get the selected accounts
+      const accounts = await ethereum.request({ method: 'eth_accounts' }) as string[];
+      if (accounts && accounts[0]) {
+        const addr = accounts[0].toLowerCase();
+        setWalletAddress(addr);
+        setAddressSource('wallet');
+        setWalletConnected(true);
+        localStorage.setItem('dg_wallet_connected', 'true');
+        localStorage.setItem('dg_wallet_address', addr);
+        localStorage.setItem('dg_address_source', 'wallet');
+      } else {
+        setWalletError('No account selected. Please select an account in MetaMask.');
       }
     } catch (err) {
       console.error('Wallet connection failed:', err);
-      setWalletError('Wallet connection rejected or failed.');
+      setWalletError(err instanceof Error ? err.message : 'Wallet connection rejected or failed.');
     } finally {
       setConnecting(false);
     }
@@ -145,9 +169,13 @@ export function useWalletPortfolio() {
     setWalletAddress('');
     setAddressSource(null);
     setSodexState(null);
+    setAssets(null);
     localStorage.removeItem('dg_wallet_connected');
     localStorage.removeItem('dg_wallet_address');
     localStorage.removeItem('dg_address_source');
+    // Note: MetaMask permissions are site-wide and cannot be revoked by JS.
+    // The next connectWallet call uses wallet_requestPermissions which forces
+    // the account picker regardless — so switching users works correctly.
   };
 
   return {
