@@ -9,9 +9,9 @@ export async function POST() {
 
   const current = await getExecutionState();
 
-  if (!current || current.phase !== 'AWAITING_USER_APPROVAL') {
+  if (!current || current.phase !== 'AWAITING_USER_APPROVAL' || !current.hedgeOrder) {
     return NextResponse.json(
-      { error: 'No pending approval found or state mismatch' },
+      { error: 'No pending approval found, state mismatch, or order is null' },
       { status: 409 }
     );
   }
