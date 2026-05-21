@@ -216,7 +216,11 @@ export default function TerminalDiagnosticsPage() {
                 <h2 className="flex items-center gap-2 font-sora text-sm font-bold text-white">
                   <Server className="h-4 w-4 text-accent-lime" /> SoDEX Trade Gateway
                 </h2>
-                <StatusPulse active={data.sodexPublic.available} error={!data.sodexPublic.available} />
+                <StatusPulse 
+                  active={data.sodexPublic.available && data.sodexPublic.httpStatus !== null && data.sodexPublic.httpStatus >= 200 && data.sodexPublic.httpStatus < 300} 
+                  warning={data.sodexPublic.available && data.sodexPublic.httpStatus !== null && data.sodexPublic.httpStatus >= 300 && data.sodexPublic.httpStatus < 500}
+                  error={!data.sodexPublic.available || data.sodexPublic.httpStatus === null || data.sodexPublic.httpStatus >= 500} 
+                />
               </div>
               <div className="p-5">
                 <div className="grid grid-cols-2 gap-3">
@@ -229,7 +233,13 @@ export default function TerminalDiagnosticsPage() {
                   <MetricBox 
                     label="HTTP Status" 
                     value={data.sodexPublic.httpStatus || 'ERR'} 
-                    highlight={data.sodexPublic.httpStatus === 200 ? 'good' : 'bad'}
+                    highlight={
+                      data.sodexPublic.httpStatus && data.sodexPublic.httpStatus >= 200 && data.sodexPublic.httpStatus < 300 
+                        ? 'good' 
+                        : data.sodexPublic.httpStatus && data.sodexPublic.httpStatus < 500 
+                        ? 'warn' 
+                        : 'bad'
+                    }
                   />
                 </div>
 

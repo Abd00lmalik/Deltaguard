@@ -67,11 +67,27 @@ export default function TerminalDashboardPage() {
   }, [scanState]);
 
   async function runScan() {
+    const isConnected = typeof window !== 'undefined' && localStorage.getItem('dg_wallet_connected') === 'true';
+    const walletAddr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') || '' : '';
+
+    if (!isConnected || !walletAddr) {
+      setScanError({
+        error: 'Web3 wallet connection required. Please connect your wallet on the Portfolio page to enable scans.',
+        code: 'CONNECTION_REQUIRED'
+      });
+      setScanState('error');
+      return;
+    }
+
     setScanState('scanning');
     setScanError(null);
     setActiveMessage(0);
     try {
-      const response = await fetch('/api/terminal/agent/scan', { method: 'POST' });
+      const response = await fetch('/api/terminal/agent/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress: walletAddr })
+      });
       const data = await response.json();
       if (!response.ok) {
         setScanError(data as ScanError);
@@ -154,9 +170,18 @@ export default function TerminalDashboardPage() {
                   </p>
                 )}
                 <div className="mt-4 flex gap-3">
-                  <PillButton size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={runScan}>
-                    Retry Scan
-                  </PillButton>
+                  {scanError.code === 'CONNECTION_REQUIRED' ? (
+                    <Link
+                      href="/terminal/portfolio"
+                      className="inline-flex items-center gap-2 rounded-xl bg-accent-lime px-4 py-2.5 font-manrope text-sm font-semibold text-neutral-950 transition-colors hover:bg-accent-lime/90"
+                    >
+                      Connect Wallet
+                    </Link>
+                  ) : (
+                    <PillButton size="sm" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={runScan}>
+                      Retry Scan
+                    </PillButton>
+                  )}
                 </div>
               </div>
             </div>

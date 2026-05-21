@@ -12,6 +12,27 @@ const API_KEY_NAME = process.env.SODEX_API_KEY_NAME ?? 'api-key-01';
 const ACCOUNT_ID = Number(process.env.SODEX_ACCOUNT_ID ?? '12345');
 const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE !== 'false';
 
+/**
+ * Resolves the correct perps API base path.
+ * If SODEX_BASE_URL is the gateway root (e.g. https://testnet-gw.sodex.dev),
+ * the perps REST API lives at /api/v1/perps under it.
+ * If the URL already contains /api/v1/perps or similar, it is used as-is.
+ */
+function resolvePerpsBase(base: string): string {
+  const trimmed = base.replace(/\/$/, '');
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.pathname === '/' || parsed.pathname === '') {
+      return `${trimmed}/api/v1/perps`;
+    }
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
+const PERPS_BASE = resolvePerpsBase(BASE_URL);
+
 export async function submitHedgeOrder(order: HedgeOrder): Promise<FilledHedgeOrder> {
   if (DEMO || !BASE_URL || !API_KEY) return submitMockHedgeOrder(order);
 
@@ -101,7 +122,7 @@ export async function submitHedgeOrder(order: HedgeOrder): Promise<FilledHedgeOr
   const typedSignature = '0x01' + rawSignature.substring(2);
 
   // 7. Post the request to SoDEX
-  const endpoint = BASE_URL.endsWith('/') ? `${BASE_URL}trade/orders` : `${BASE_URL}/trade/orders`;
+  const endpoint = PERPS_BASE.endsWith('/') ? `${PERPS_BASE}trade/orders` : `${PERPS_BASE}/trade/orders`;
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {

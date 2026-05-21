@@ -28,6 +28,16 @@ export async function POST(req: Request) {
     ?? process.env.SODEX_ACCOUNT_ADDRESS
     ?? null;
 
+  if (!walletAddress) {
+    return NextResponse.json(
+      {
+        error: 'Web3 wallet connection or SODEX_ACCOUNT_ADDRESS environment fallback required.',
+        code: 'CONNECTION_REQUIRED',
+      },
+      { status: 400 }
+    );
+  }
+
   // Run all fetches in parallel — SSI failure must NOT block market signal analysis
   const [sosoResult, ssiResult] = await Promise.allSettled([
     getSoSoValueData(),

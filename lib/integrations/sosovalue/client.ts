@@ -4,7 +4,15 @@
 import type { CompositeScore, MarketSignal, SignalCategory, SignalSeverity } from '@/types/signals';
 import { getMockCompositeScore, getMockSignals } from './mock-client';
 
-const BASE_URL = process.env.SOSOVALUE_BASE_URL || 'https://openapi.sosovalue.com/openapi/v1';
+function normalizeSoSoBaseUrl(raw: string): string {
+  const trimmed = raw.replace(/\/$/, '');
+  try {
+    if (new URL(trimmed).pathname.length > 1) return trimmed;
+  } catch { return raw; }
+  return `${trimmed}/openapi/v1`;
+}
+const _RAW_BASE = process.env.SOSOVALUE_BASE_URL || 'https://openapi.sosovalue.com/openapi/v1';
+const BASE_URL = normalizeSoSoBaseUrl(_RAW_BASE);
 const API_KEY = process.env.SOSOVALUE_API_KEY ?? '';
 const DEMO = process.env.NEXT_PUBLIC_DEMO_MODE !== 'false';
 

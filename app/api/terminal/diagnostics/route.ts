@@ -10,6 +10,19 @@ import { getSoSoValueData } from '@/lib/integrations/sosovalue/provider';
 import { fetchSSIData } from '@/lib/integrations/ssi/server-client';
 import { type ProviderError } from '@/lib/types/signal-source';
 
+function resolvePerpsBase(base: string): string {
+  const trimmed = base.replace(/\/$/, '');
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.pathname === '/' || parsed.pathname === '') {
+      return `${trimmed}/api/v1/perps`;
+    }
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
+}
+
 async function checkSoDEXPublicHealth(): Promise<{ available: boolean; httpStatus: number | null; error?: string; latencyMs?: number }> {
   const baseUrl = process.env.SODEX_BASE_URL;
   if (!baseUrl) return { available: false, httpStatus: null, error: 'SODEX_BASE_URL not configured' };
@@ -17,7 +30,8 @@ async function checkSoDEXPublicHealth(): Promise<{ available: boolean; httpStatu
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), 4000);
     const startMs = Date.now();
-    const res = await fetch(baseUrl, { method: 'GET', signal: controller.signal });
+    const perpsBase = resolvePerpsBase(baseUrl);
+    const res = await fetch(perpsBase, { method: 'GET', signal: controller.signal });
     const latencyMs = Date.now() - startMs;
     clearTimeout(id);
     return { available: res.status >= 200 && res.status < 500, httpStatus: res.status, latencyMs };

@@ -78,7 +78,7 @@ export function useWalletPortfolio() {
       if (usedAddress) {
         setWalletAddress(usedAddress);
         setWalletConnected(true);
-        const activeSource = source || data.searchParams?.address ? 'watch' : 'env';
+        const activeSource = source ?? (data.searchParams?.address ? 'watch' : 'env');
         setAddressSource(activeSource);
         localStorage.setItem('dg_wallet_connected', 'true');
         localStorage.setItem('dg_wallet_address', usedAddress);

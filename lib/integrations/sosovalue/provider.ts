@@ -44,7 +44,15 @@ export interface SoSoValueFetchResult {
   responseSizeBytes?: number;
 }
 
-const BASE_URL = process.env.SOSOVALUE_BASE_URL || 'https://openapi.sosovalue.com/openapi/v1';
+// If the configured URL ends at the bare domain (no /openapi/v1 path), append it automatically.
+function normalizeSoSoBaseUrl(raw: string): string {
+  const trimmed = raw.replace(/\/$/, '');
+  // If it already has /openapi (or any path deeper than root), use as-is
+  if (new URL(trimmed).pathname.length > 1) return trimmed;
+  return `${trimmed}/openapi/v1`;
+}
+const _RAW_SOSOVALUE_URL = process.env.SOSOVALUE_BASE_URL || 'https://openapi.sosovalue.com/openapi/v1';
+const BASE_URL = (() => { try { return normalizeSoSoBaseUrl(_RAW_SOSOVALUE_URL); } catch { return _RAW_SOSOVALUE_URL; } })();
 const API_KEY = process.env.SOSOVALUE_API_KEY ?? '';
 
 let lastResult: SoSoValueFetchResult | null = null;
