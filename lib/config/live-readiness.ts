@@ -26,7 +26,6 @@ export function checkLiveReadiness(): ReadinessReport {
   const sodexSigned =
     sodexPublic &&
     !!process.env.SODEX_ACCOUNT_ID &&
-    !!process.env.SODEX_ACCOUNT_ADDRESS &&
     !!process.env.SODEX_API_KEY &&
     !!process.env.SODEX_API_PRIVATE_KEY;
 
@@ -39,6 +38,6 @@ export function checkLiveReadiness(): ReadinessReport {
     sodexSigned,
     database,
     allRequiredForPublicReads: sosovalue && sodexPublic,
-    allRequiredForSignedExecution: sosovalue && ssi && sodexSigned,
+    allRequiredForSignedExecution: sosovalue && sodexSigned,
   };
 }

@@ -22,25 +22,96 @@ export interface SSIResult {
   assets?: PortfolioAsset[];
 }
 
-const _BASE_URL = process.env.SSI_API_BASE_URL ?? '';
+const BASE_URL = process.env.SSI_API_BASE_URL ?? '';
 
 export async function fetchSSIData(walletAddress: string | null): Promise<SSIResult> {
-  // SSI live data source not yet configured or returning 404.
-  // Portfolio exposure requires wallet connection.
-  return {
-    available: false,
-    setupRequired: true,
-    source: "unavailable",
-    walletAddress,
-    message: walletAddress
-      ? "SSI exposure source not configured for this address. Verify SSI contract or API source in settings."
-      : "Connect a wallet or enter a watch address to load SSI portfolio exposure.",
-    assets: []
-  };
+  if (!BASE_URL) {
+    return {
+      available: false,
+      setupRequired: true,
+      source: "unavailable",
+      walletAddress,
+      message: walletAddress
+        ? "SSI exposure source not configured. Verify SSI_API_BASE_URL is set in your .env configuration."
+        : "Connect a wallet or enter a watch address to load SSI portfolio exposure.",
+      assets: []
+    };
+  }
+
+  if (!walletAddress) {
+    return {
+      available: false,
+      setupRequired: false,
+      source: "ssi",
+      walletAddress: null,
+      message: "Connect a wallet or enter a watch address to load SSI portfolio exposure.",
+      assets: []
+    };
+  }
+
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 5000);
+    const url = `${BASE_URL.replace(/\/$/, '')}/portfolio/holdings?address=${encodeURIComponent(walletAddress)}`;
+    
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: controller.signal
+    });
+    
+    clearTimeout(id);
+
+    if (!res.ok) {
+      return {
+        available: false,
+        setupRequired: false,
+        source: "ssi",
+        walletAddress,
+        message: `SSI Protocol API returned error status: ${res.status}`,
+        assets: []
+      };
+    }
+
+    const data = await res.json() as PortfolioAsset[];
+    return {
+      available: true,
+      setupRequired: false,
+      source: "ssi",
+      walletAddress,
+      message: "Successfully retrieved portfolio holdings from SSI Protocol.",
+      assets: Array.isArray(data) ? data : []
+    };
+  } catch (err) {
+    console.warn('[DeltaGuard] Failed to fetch SSI data from configured endpoint:', err);
+    return {
+      available: false,
+      setupRequired: false,
+      source: "ssi",
+      walletAddress,
+      message: `Failed to connect to SSI Protocol API: ${err instanceof Error ? err.message : String(err)}`,
+      assets: []
+    };
+  }
 }
 
-export async function fetchSSIPortfolio(_address?: string): Promise<PortfolioAsset[]> {
-  // Graceful fallback: return empty list since SSI endpoint is not functional,
-  // preventing 500/404 page explosions.
-  return [];
+export async function fetchSSIPortfolio(address?: string): Promise<PortfolioAsset[]> {
+  if (!BASE_URL || !address) {
+    return [];
+  }
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 5000);
+    const url = `${BASE_URL.replace(/\/$/, '')}/portfolio/holdings?address=${encodeURIComponent(address)}`;
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
+    if (!res.ok) return [];
+    const data = await res.json() as PortfolioAsset[];
+    return Array.isArray(data) ? data : [];
+  } catch (err) {
+    console.error('[DeltaGuard] Failed to fetch SSI portfolio assets:', err);
+    return [];
+  }
 }
