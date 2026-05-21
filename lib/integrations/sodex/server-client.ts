@@ -173,7 +173,6 @@ export async function getSodexAccountState(address: string): Promise<{
   leverage: number;
   positionsCount: number;
   collateralUsd: number;
-  isSandboxFallback?: boolean;
 }> {
   if (!BASE_URL) {
     throw new Error('SoDEX API base URL not configured.');
