@@ -116,7 +116,7 @@ export default function TerminalSignalsPage() {
             </h3>
             <p className="mt-2 font-manrope text-xs text-text-secondary leading-5">
               This panel tracks live market feeds across 9 core quantitative metrics from the SoSoValue OpenAPI. 
-              When market feeds fail or are unavailable (such as the offline SSI Protocol), DeltaGuard calculates <strong>derived proxy metrics</strong> using BTC's live price momentum to maintain risk coverage.
+              When market feeds fail or are unavailable (such as the offline SSI Protocol), DeltaGuard calculates <strong>derived proxy metrics</strong> using BTC&apos;s live price momentum to maintain risk coverage.
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-3">
               <div className="rounded-lg bg-surface-2 p-3 border border-white/[0.04]">
