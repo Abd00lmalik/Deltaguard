@@ -3,13 +3,14 @@
 import type { ExecutionPhase } from '@/lib/storage/execution-store';
 
 const TRANSITIONS: Record<ExecutionPhase, ExecutionPhase[]> = {
-  AWAITING_USER_APPROVAL: ['APPROVED', 'CANCELLED'],
-  APPROVED: ['ORDER_PREPARING', 'FAILED'],
-  ORDER_PREPARING: ['ORDER_SUBMITTED', 'FAILED'],
-  ORDER_SUBMITTED: ['FILLED', 'FAILED'],
-  FILLED: ['AWAITING_USER_APPROVAL'], // allows reset
-  FAILED: ['AWAITING_USER_APPROVAL'], // allows retry
-  CANCELLED: ['AWAITING_USER_APPROVAL'] // allows reset
+  NONE: ['AWAITING_USER_APPROVAL'],
+  AWAITING_USER_APPROVAL: ['APPROVED', 'CANCELLED', 'NONE'],
+  APPROVED: ['ORDER_PREPARING', 'FAILED', 'NONE'],
+  ORDER_PREPARING: ['ORDER_SUBMITTED', 'FAILED', 'NONE'],
+  ORDER_SUBMITTED: ['FILLED', 'FAILED', 'NONE'],
+  FILLED: ['NONE', 'AWAITING_USER_APPROVAL'], // allows reset
+  FAILED: ['NONE', 'AWAITING_USER_APPROVAL'], // allows retry
+  CANCELLED: ['NONE', 'AWAITING_USER_APPROVAL'] // allows reset
 };
 
 export function transitionTo(current: ExecutionPhase, next: ExecutionPhase): boolean {
