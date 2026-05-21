@@ -1,13 +1,21 @@
 import { createPublicClient, http, formatUnits, erc20Abi } from 'viem';
 import { sepolia } from 'viem/chains';
-import type { PortfolioAsset } from '@/types/portfolio';
+import type { PortfolioAsset, AssetClass } from '@/types/portfolio';
 
 // Common testnet tokens on Sepolia
-const TOKENS = [
+const TOKENS: Array<{
+  symbol: string;
+  name: string;
+  address: `0x${string}`;
+  decimals: number;
+  class: AssetClass;
+  mockPriceUsd: number;
+  delta: number;
+}> = [
   {
     symbol: 'USDC',
     name: 'USD Coin',
-    address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238' as const, // Sepolia USDC
+    address: '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238',
     decimals: 6,
     class: 'stablecoin',
     mockPriceUsd: 1.0,
@@ -16,9 +24,9 @@ const TOKENS = [
   {
     symbol: 'WBTC',
     name: 'Wrapped Bitcoin',
-    address: '0x29f2D40B0605204364af54EC677bD022dA425d03' as const, // Sepolia WBTC mock
+    address: '0x29f2D40B0605204364af54EC677bD022dA425d03',
     decimals: 8,
-    class: 'crypto',
+    class: 'spot',
     mockPriceUsd: 63400.0,
     delta: 1.0
   }
@@ -37,9 +45,9 @@ export async function getOnChainPortfolio(address: string): Promise<PortfolioAss
     // 1. Fetch native ETH
     const ethBalance = await publicClient.getBalance({ address: address as `0x${string}` });
     const ethAmount = Number(formatUnits(ethBalance, 18));
-    const ethPriceUsd = 3100.0; // Mock price for testnet display
+    const ethPriceUsd = 3100.0; // Testnet display price only
     const ethValueUsd = ethAmount * ethPriceUsd;
-    
+
     if (ethAmount > 0) {
       assets.push({
         id: 'native-eth',
@@ -48,9 +56,9 @@ export async function getOnChainPortfolio(address: string): Promise<PortfolioAss
         amount: ethAmount,
         priceUsd: ethPriceUsd,
         valueUsd: ethValueUsd,
-        class: 'crypto',
+        class: 'spot',
         delta: 1.0,
-        allocation: 0 // Calculated later
+        allocation: 0
       });
       totalValueUsd += ethValueUsd;
     }
@@ -85,7 +93,7 @@ export async function getOnChainPortfolio(address: string): Promise<PortfolioAss
           valueUsd,
           class: token.class,
           delta: token.delta,
-          allocation: 0 // Calculated later
+          allocation: 0
         });
         totalValueUsd += valueUsd;
       }
