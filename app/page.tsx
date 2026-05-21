@@ -181,7 +181,7 @@ export default function LandingPage() {
           <PillButton size="sm" variant="secondary" onClick={() => window.open('https://github.com/', '_blank')}>
             GitHub -&gt;
           </PillButton>
-          <PillButton size="sm" onClick={() => router.push('/dashboard')}>
+          <PillButton size="sm" onClick={() => router.push('/terminal')}>
             Open Terminal
           </PillButton>
         </div>
@@ -232,14 +232,33 @@ export default function LandingPage() {
             initial={reducedMotion ? false : { opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: reducedMotion ? 0 : 0.5, delay: reducedMotion ? 0 : 0.95 }}
-            className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row"
+            className="mt-10 grid gap-6 sm:grid-cols-2 max-w-2xl w-full"
           >
-            <PillButton size="lg" icon={<ArrowRight className="h-4 w-4" />} onClick={() => router.push('/dashboard')}>
-              Open Terminal
-            </PillButton>
-            <PillButton size="lg" variant="secondary" onClick={() => router.push('/dashboard')}>
-              Run Risk Scan
-            </PillButton>
+            <div className="group relative rounded-2xl border border-accent-lime/10 bg-surface-1/40 p-6 text-left backdrop-blur-sm transition-all hover:border-accent-lime/30 hover:bg-surface-1/60">
+              <div className="absolute top-4 right-4 rounded-full bg-accent-lime/10 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-accent-lime">Live Testnet</div>
+              <h3 className="font-sora text-lg font-bold text-white flex items-center gap-2">
+                Live Terminal <ArrowRight className="h-4 w-4 text-accent-lime transition-transform group-hover:translate-x-1" />
+              </h3>
+              <p className="mt-2 font-manrope text-xs text-text-secondary leading-relaxed">
+                Connect real credentials for SoSoValue, SSI Protocol, and SoDEX. Validates environments and runs live testnet orders.
+              </p>
+              <PillButton size="sm" className="mt-4 w-full justify-center" onClick={() => router.push('/terminal')}>
+                Enter Live Terminal
+              </PillButton>
+            </div>
+
+            <div className="group relative rounded-2xl border border-amber-500/10 bg-surface-1/40 p-6 text-left backdrop-blur-sm transition-all hover:border-amber-500/30 hover:bg-surface-1/60">
+              <div className="absolute top-4 right-4 rounded-full bg-amber-500/10 px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-amber-400">Prototype</div>
+              <h3 className="font-sora text-lg font-bold text-white flex items-center gap-2">
+                Demo Sandbox <ArrowRight className="h-4 w-4 text-amber-400 transition-transform group-hover:translate-x-1" />
+              </h3>
+              <p className="mt-2 font-manrope text-xs text-text-secondary leading-relaxed">
+                Explore the guided DeltaGuard risk-hedging workflow with deterministic, zero-configuration simulated environments.
+              </p>
+              <PillButton size="sm" variant="secondary" className="mt-4 w-full justify-center border-amber-500/20 hover:border-amber-500/40 text-amber-400 hover:text-white" onClick={() => router.push('/demo')}>
+                Enter Demo Sandbox
+              </PillButton>
+            </div>
           </motion.div>
           <motion.div
             initial={reducedMotion ? false : { opacity: 0, scale: 0.94 }}

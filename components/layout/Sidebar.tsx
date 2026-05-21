@@ -16,16 +16,7 @@ import {
 import { cn } from '@/lib/utils/cn';
 import { useReducedMotionPreference } from '@/lib/utils/use-reduced-motion';
 
-const navItems = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Portfolio', href: '/portfolio', icon: Wallet },
-  { label: 'Signals', href: '/signals', icon: Activity },
-  { label: 'Agent', href: '/agent', icon: Brain },
-  { label: 'Execution', href: '/execution', icon: Zap },
-  { label: 'Stress Test', href: '/stress-test', icon: TrendingDown },
-  { label: 'Architecture', href: '/integrations', icon: Layers },
-  { label: 'Settings', href: '/settings', icon: Settings }
-];
+
 
 function Logo() {
   return (
@@ -40,9 +31,25 @@ function Logo() {
   );
 }
 
-export function Sidebar() {
+export interface SidebarProps {
+  mode?: 'demo' | 'live';
+}
+
+export function Sidebar({ mode = 'demo' }: SidebarProps) {
   const pathname = usePathname();
   const reducedMotion = useReducedMotionPreference();
+  const prefix = mode === 'demo' ? '/demo' : '/terminal';
+
+  const navItems = [
+    { label: 'Dashboard', href: `${prefix}/dashboard`, icon: LayoutDashboard },
+    { label: 'Portfolio', href: `${prefix}/portfolio`, icon: Wallet },
+    { label: 'Signals', href: `${prefix}/signals`, icon: Activity },
+    { label: 'Agent', href: `${prefix}/agent`, icon: Brain },
+    { label: 'Execution', href: `${prefix}/execution`, icon: Zap },
+    { label: 'Stress Test', href: `${prefix}/stress-test`, icon: TrendingDown },
+    { label: 'Architecture', href: '/integrations', icon: Layers },
+    { label: 'Settings', href: `${prefix}/settings`, icon: Settings }
+  ];
 
   return (
     <>
@@ -77,8 +84,25 @@ export function Sidebar() {
             );
           })}
         </nav>
-        <div className="px-5 py-5">
-          <p className="font-manrope text-[11px] text-text-muted">v1.0</p>
+        <div className="px-5 py-5 border-t border-border-subtle/30 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2">
+            <span className={cn(
+              "relative flex h-2 w-2",
+            )}>
+              <span className={cn(
+                "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                mode === 'demo' ? "bg-amber-400" : "bg-accent-lime"
+              )}></span>
+              <span className={cn(
+                "relative inline-flex rounded-full h-2 w-2",
+                mode === 'demo' ? "bg-amber-500" : "bg-accent-lime"
+              )}></span>
+            </span>
+            <p className="font-manrope text-[11px] font-semibold text-text-secondary">
+              {mode === 'demo' ? 'Prototype Environment' : 'Live Testnet'}
+            </p>
+          </div>
+          <p className="font-manrope text-[10px] text-text-muted">v1.0.0</p>
         </div>
       </aside>
 

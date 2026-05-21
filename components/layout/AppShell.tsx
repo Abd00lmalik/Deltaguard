@@ -15,7 +15,9 @@ export function AppShell({ children }: AppShellProps) {
   const isLanding = pathname === '/';
   const reducedMotion = useReducedMotionPreference();
 
-  if (isLanding) return <>{children}</>;
+  if (isLanding || pathname.startsWith('/demo') || pathname.startsWith('/terminal')) {
+    return <>{children}</>;
+  }
 
   return (
     <>
