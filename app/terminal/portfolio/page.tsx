@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { AlertTriangle, GitBranch, RefreshCw, Wallet, Coins, FileSignature, Search, ShieldAlert } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { AllocationChart } from '@/components/portfolio/AllocationChart';
@@ -57,7 +57,7 @@ export default function TerminalPortfolioPage() {
     }
   }, []);
 
-  async function loadPortfolio(addressToLoad?: string, source?: 'wallet' | 'watch' | 'env') {
+  const loadPortfolio = useCallback(async (addressToLoad?: string, source?: 'wallet' | 'watch' | 'env') => {
     setLoadingHoldings(true);
     setError(null);
     try {
@@ -91,7 +91,7 @@ export default function TerminalPortfolioPage() {
     } finally {
       setLoadingHoldings(false);
     }
-  }
+  }, [walletAddress]);
 
   // Load holdings automatically when wallet state is set
   useEffect(() => {
@@ -101,7 +101,7 @@ export default function TerminalPortfolioPage() {
       setAssets(null);
       setSodexState(null);
     }
-  }, [walletConnected, walletAddress, addressSource]);
+  }, [walletConnected, walletAddress, addressSource, loadPortfolio]);
 
   async function connectWallet() {
     setConnecting(true);

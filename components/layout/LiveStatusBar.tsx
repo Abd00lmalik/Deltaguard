@@ -1,21 +1,66 @@
 // DeltaGuard AI - Live terminal environment status bar component
+// Polls /api/terminal/health every 60 seconds.
+// All status derived from real health check results — never from client-side env vars.
+// Status badge and signal page source label will ALWAYS agree because both use the shared provider cache.
 'use client';
 
 import React, { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils/cn';
+import type { ProviderHealth } from '@/lib/types/signal-source';
 
-interface ReadinessResponse {
-  sosovalue: boolean;
-  ssi: boolean;
-  sodexPublic: boolean;
-  sodexSigned: boolean;
-  database: boolean;
-  allRequiredForPublicReads: boolean;
-  allRequiredForSignedExecution: boolean;
+interface HealthEntry {
+  status: ProviderHealth;
+  connected: boolean;
+}
+
+interface HealthResponse {
+  sosovalue:   HealthEntry;
+  ssi:         HealthEntry;
+  sodexPublic: HealthEntry;
+  sodexSigned: HealthEntry;
+  database:    HealthEntry;
+  signalSource?: string;
+  checkedAt?: string;
+}
+
+const DOT_COLOR: Record<ProviderHealth | 'checking', string> = {
+  connected:      'bg-accent-lime shadow-[0_0_8px_rgba(156,255,0,0.5)]',
+  degraded:       'bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.5)]',
+  unavailable:    'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse',
+  setup_required: 'bg-neutral-500',
+  checking:       'bg-neutral-400 animate-pulse',
+};
+
+const TEXT_COLOR: Record<ProviderHealth | 'checking', string> = {
+  connected:      'text-accent-lime',
+  degraded:       'text-amber-400',
+  unavailable:    'text-red-500',
+  setup_required: 'text-neutral-500',
+  checking:       'text-neutral-400',
+};
+
+const STATUS_LABEL: Record<ProviderHealth | 'checking', string> = {
+  connected:      'Connected',
+  degraded:       'Degraded',
+  unavailable:    'Offline',
+  setup_required: 'Not Configured',
+  checking:       'Checking...',
+};
+
+function StatusPill({ label, health }: { label: string; health: ProviderHealth | 'checking' }) {
+  return (
+    <div className="flex items-center gap-1.5 whitespace-nowrap">
+      <span className="text-text-muted">{label}:</span>
+      <span className={cn('h-1.5 w-1.5 rounded-full', DOT_COLOR[health])} />
+      <span className={cn('font-medium', TEXT_COLOR[health])}>
+        {STATUS_LABEL[health]}
+      </span>
+    </div>
+  );
 }
 
 export function LiveStatusBar() {
-  const [readiness, setReadiness] = useState<ReadinessResponse | null>(null);
+  const [health, setHealth] = useState<HealthResponse | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -23,8 +68,8 @@ export function LiveStatusBar() {
     const checkHealth = () => {
       fetch('/api/terminal/health')
         .then((res) => res.json())
-        .then((data) => {
-          if (active) setReadiness(data);
+        .then((data: HealthResponse) => {
+          if (active) setHealth(data);
         })
         .catch((err) => console.error('Failed to fetch health status:', err));
     };
@@ -38,56 +83,18 @@ export function LiveStatusBar() {
     };
   }, []);
 
+  const sos  = health?.sosovalue?.status   ?? 'checking';
+  const ssi  = health?.ssi?.status         ?? 'checking';
+  const sodP = health?.sodexPublic?.status ?? 'checking';
+  const sodS = health?.sodexSigned?.status ?? 'checking';
+
   return (
     <div className="flex h-9 items-center justify-between border-b border-accent-lime/10 bg-accent-lime/[0.04] px-4 font-manrope text-[11px] text-text-muted">
       <div className="flex items-center gap-5 overflow-x-auto">
-        {/* SoSoValue Status */}
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <span className="text-text-muted">SoSoValue:</span>
-          <span className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            readiness?.sosovalue ? "bg-accent-lime shadow-[0_0_8px_rgba(156,255,0,0.5)]" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse"
-          )} />
-          <span className={cn("font-medium", readiness?.sosovalue ? "text-accent-lime" : "text-red-500")}>
-            {readiness?.sosovalue ? "Connected" : "Offline"}
-          </span>
-        </div>
-
-        {/* SSI Status */}
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <span className="text-text-muted">SSI:</span>
-          <span className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            readiness?.ssi ? "bg-accent-lime shadow-[0_0_8px_rgba(156,255,0,0.5)]" : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
-          )} />
-          <span className={cn("font-medium", readiness?.ssi ? "text-accent-lime" : "text-amber-500")}>
-            {readiness?.ssi ? "Connected" : "Unavailable"}
-          </span>
-        </div>
-
-        {/* SoDEX Public Status */}
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <span className="text-text-muted">SoDEX Public:</span>
-          <span className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            readiness?.sodexPublic ? "bg-accent-lime shadow-[0_0_8px_rgba(156,255,0,0.5)]" : "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)] animate-pulse"
-          )} />
-          <span className={cn("font-medium", readiness?.sodexPublic ? "text-accent-lime" : "text-red-500")}>
-            {readiness?.sodexPublic ? "Active" : "Offline"}
-          </span>
-        </div>
-
-        {/* SoDEX Signed Status */}
-        <div className="flex items-center gap-1.5 whitespace-nowrap">
-          <span className="text-text-muted">SoDEX Signed:</span>
-          <span className={cn(
-            "h-1.5 w-1.5 rounded-full",
-            readiness?.sodexSigned ? "bg-accent-lime shadow-[0_0_8px_rgba(156,255,0,0.5)] animate-pulse" : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
-          )} />
-          <span className={cn("font-medium", readiness?.sodexSigned ? "text-accent-lime" : "text-amber-500")}>
-            {readiness?.sodexSigned ? "Execution Ready" : "Setup Required"}
-          </span>
-        </div>
+        <StatusPill label="SoSoValue" health={sos as ProviderHealth | 'checking'} />
+        <StatusPill label="SSI"       health={ssi as ProviderHealth | 'checking'} />
+        <StatusPill label="SoDEX Public" health={sodP as ProviderHealth | 'checking'} />
+        <StatusPill label="SoDEX Signed" health={sodS as ProviderHealth | 'checking'} />
       </div>
 
       <span className="rounded bg-accent-lime/10 px-1.5 py-0.5 font-manrope text-[10px] font-bold tracking-wider text-accent-lime uppercase">

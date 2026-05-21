@@ -11,6 +11,7 @@ export {
 
 export {
   fetchSSIPortfolio as portfolioAssets,
+  fetchSSIData,
 } from '@/lib/integrations/ssi/server-client';
 
 export {

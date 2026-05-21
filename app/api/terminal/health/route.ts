@@ -1,88 +1,85 @@
-import { NextResponse } from 'next/server';
-import { checkLiveReadiness } from '@/lib/config/live-readiness';
+/**
+ * TERMINAL ROUTE — LIVE DATA ONLY
+ * Returns real external API data or honest error states.
+ * Does not fall back to mock data silently.
+ * 
+ * AUDIT FINDINGS:
+ * - Previous health route called separate standalone fetches with a 4s timeout. Because it ran
+ *   independently from the signals route, it could fail even when signals succeeded (timing difference).
+ * - Fixed: health route now calls getSoSoValueData() which shares the 30s provider cache with the
+ *   signals route. Both routes will ALWAYS agree on SoSoValue status.
+ * - SoSoValue status now derived from real HTTP response outcome, not env var presence.
+ */
 
-async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 4000): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
+import { NextResponse } from 'next/server';
+import { getSoSoValueData } from '@/lib/integrations/sosovalue/provider';
+import { fetchSSIData } from '@/lib/integrations/ssi/server-client';
+import type { ProviderHealth } from '@/lib/types/signal-source';
+
+async function checkSoDEXPublicHealth(): Promise<{ healthy: boolean; status: number | null; error?: string }> {
+  const baseUrl = process.env.SODEX_BASE_URL;
+  if (!baseUrl) return { healthy: false, status: null, error: 'SODEX_BASE_URL not configured' };
+
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-    });
-    return response;
-  } finally {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), 4000);
+    const res = await fetch(baseUrl, { method: 'GET', signal: controller.signal });
     clearTimeout(id);
+    // 200-499 means the server is up and responding (404 just means wrong path but server is alive)
+    return { healthy: res.status >= 200 && res.status < 500, status: res.status };
+  } catch (err) {
+    return { healthy: false, status: null, error: err instanceof Error ? err.message : String(err) };
   }
 }
 
 export async function GET() {
-  const readiness = checkLiveReadiness();
+  // All checks run in parallel
+  const [sosoResult, ssiResult, sodexResult] = await Promise.allSettled([
+    getSoSoValueData(),
+    fetchSSIData(process.env.SODEX_ACCOUNT_ADDRESS ?? null),
+    checkSoDEXPublicHealth(),
+  ]);
 
-  let sosovalueHealthy = false;
-  let ssiHealthy = false;
-  let sodexPublicHealthy = false;
+  const sosoData  = sosoResult.status  === 'fulfilled' ? sosoResult.value  : null;
+  const ssiData   = ssiResult.status   === 'fulfilled' ? ssiResult.value   : null;
+  const sodexData = sodexResult.status === 'fulfilled' ? sodexResult.value : null;
 
-  // 1. SoSoValue Health Check
-  if (readiness.sosovalue) {
-    try {
-      const baseUrl = process.env.SOSOVALUE_BASE_URL || 'https://openapi.sosovalue.com/openapi/v1';
-      const endpoint = baseUrl.endsWith('/') ? `${baseUrl}news` : `${baseUrl}/news`;
-      const res = await fetchWithTimeout(`${endpoint}?page_size=1`, {
-        headers: { 'x-soso-api-key': process.env.SOSOVALUE_API_KEY || '' }
-      });
-      if (res.status === 200 || res.status === 201) {
-        sosovalueHealthy = true;
-      } else {
-        console.warn(`SoSoValue health check returned status ${res.status}`);
-      }
-    } catch (err) {
-      console.error('SoSoValue health check failed:', err);
-    }
-  }
+  // SoSoValue — derive from the actual shared provider result (same cache as signals route)
+  const sosoHealth: ProviderHealth = sosoData
+    ? sosoData.providerHealth
+    : 'unavailable';
 
-  // 2. SSI Health Check
-  if (readiness.ssi) {
-    try {
-      const baseUrl = process.env.SSI_API_BASE_URL || '';
-      const endpoint = baseUrl.endsWith('/') ? `${baseUrl}portfolio/holdings` : `${baseUrl}/portfolio/holdings`;
-      const res = await fetchWithTimeout(endpoint, { method: 'GET' });
-      if (res.status === 200 || res.status === 201) {
-        ssiHealthy = true;
-      } else {
-        console.warn(`SSI health check returned status ${res.status}`);
-      }
-    } catch (err) {
-      console.error('SSI health check failed:', err);
-    }
-  }
+  // SSI — currently option C (no live source), always setup_required
+  const ssiHealth: ProviderHealth = ssiData
+    ? (ssiData.setupRequired ? 'setup_required' : ssiData.available ? 'connected' : 'unavailable')
+    : 'unavailable';
 
-  // 3. SoDEX Public Health Check
-  if (readiness.sodexPublic) {
-    try {
-      const baseUrl = process.env.SODEX_BASE_URL || 'https://api.sodex-testnet.com/v1/perpetuals';
-      // Try calling the base URL to check if the server is responsive
-      const res = await fetchWithTimeout(baseUrl, { method: 'GET' });
-      // A status of 200, 404, or 405 indicates the server is up and responsive (e.g. endpoint exists or handles routing)
-      if (res.status >= 200 && res.status < 500) {
-        sodexPublicHealthy = true;
-      } else {
-        console.warn(`SoDEX public health check returned status ${res.status}`);
-      }
-    } catch (err) {
-      console.error('SoDEX public health check failed:', err);
-    }
-  }
+  // SoDEX Public
+  const sodexPublicHealth: ProviderHealth = sodexData?.healthy ? 'connected' : 'unavailable';
 
-  const sodexSignedHealthy = readiness.sodexSigned && sodexPublicHealthy;
+  // SoDEX Signed — requires valid private key + account ID + working public connection
+  const sodexSignedHealth: ProviderHealth =
+    process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID && sodexData?.healthy
+      ? 'connected'
+      : process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID
+      ? 'degraded'
+      : 'setup_required';
 
   return NextResponse.json({
-    sosovalue: sosovalueHealthy,
-    ssi: ssiHealthy,
-    sodexPublic: sodexPublicHealthy,
-    sodexSigned: sodexSignedHealthy,
-    database: readiness.database,
-    allRequiredForPublicReads: sosovalueHealthy && sodexPublicHealthy,
-    allRequiredForSignedExecution: sosovalueHealthy && ssiHealthy && sodexSignedHealthy,
+    sosovalue:   { status: sosoHealth,       connected: sosoHealth === 'connected' || sosoHealth === 'degraded' },
+    ssi:         { status: ssiHealth,        connected: ssiHealth === 'connected' },
+    sodexPublic: { status: sodexPublicHealth, connected: sodexPublicHealth === 'connected' },
+    sodexSigned: { status: sodexSignedHealth, connected: sodexSignedHealth === 'connected' },
+    database:    { status: process.env.DATABASE_URL ? 'connected' : 'setup_required', connected: Boolean(process.env.DATABASE_URL) },
+    // Legacy boolean fields for backward compat with LiveStatusBar
+    sosovalue_ok:  sosoHealth === 'connected' || sosoHealth === 'degraded',
+    ssi_ok:        ssiHealth  === 'connected',
+    sodexPublic_ok: sodexPublicHealth === 'connected',
+    sodexSigned_ok: sodexSignedHealth === 'connected',
+    checkedAt: new Date().toISOString(),
+    signalSource: sosoData?.source ?? 'unavailable',
+  }, {
+    headers: { 'Cache-Control': 'no-store' }
   });
 }
 

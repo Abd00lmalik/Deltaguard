@@ -32,7 +32,7 @@ export function CompositeSignalScore({ score }: CompositeSignalScoreProps) {
 
   return (
     <GlowCard glowing className="p-8 text-center">
-      <p className={`font-sora text-7xl font-extrabold ${scoreColor}`}>{val}</p>
+      <p className={`font-sora text-7xl font-extrabold ${scoreColor}`}>{val !== null ? val : '—'}</p>
       <p className="mt-2 font-manrope text-[11px] font-bold uppercase tracking-[0.24em] text-accent-lime">
         {label} REGIME
       </p>
@@ -40,7 +40,7 @@ export function CompositeSignalScore({ score }: CompositeSignalScoreProps) {
         <StatusBadge variant={badgeVariant} label={label} />
         <StatusBadge variant="muted" label="SoSoValue Signal Feed" />
       </div>
-      <RiskScoreGauge score={val} min={-100} max={100} label="Composite Signal" className="mx-auto mt-6 max-w-md" />
+      <RiskScoreGauge score={val ?? 0} min={-100} max={100} label="Composite Signal" className="mx-auto mt-6 max-w-md" />
       <p className="mt-4 font-manrope text-xs text-text-muted">Updated {formattedDate}</p>
     </GlowCard>
   );

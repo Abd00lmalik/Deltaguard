@@ -21,10 +21,12 @@ export interface MarketSignal {
   timestamp: string;
   explanation: string;
   source: string;
+  value?: number | string | null;
+  unavailableReason?: string | null;
 }
 
 export interface CompositeScore {
-  value: number;
+  value: number | null;
   label: string;
   regime: 'risk-off' | 'caution' | 'neutral' | 'risk-on';
   lastUpdated: string;

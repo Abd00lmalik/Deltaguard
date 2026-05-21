@@ -9,5 +9,17 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 
 export default defineConfig([
   ...compat.extends('next/core-web-vitals', 'next/typescript'),
-  globalIgnores(['.next/**', 'node_modules/**', 'next-env.d.ts'])
+  globalIgnores(['.next/**', 'node_modules/**', 'next-env.d.ts']),
+  {
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
 ]);
