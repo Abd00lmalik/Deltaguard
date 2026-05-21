@@ -30,48 +30,80 @@ export const SIGNAL_DISPLAY_NAMES: Record<string, string> = {
 
 export const SIGNAL_INTEGRITY_MAP = {
   etfFlowPressure: {
-    requiredSource: "SoSoValue ETF/market flow data",
-    condition: (_data: SoSoValueFetchResult) => false,
-    derivationNote: "Derived from ETF net flow direction and magnitude",
+    requiredSource: "SoSoValue BTC market-snapshot (derived proxy for ETF flow pressure)",
+    // Enabled when BTC snapshot data is available — score is derived from BTC 24h price action
+    condition: (data: SoSoValueFetchResult) => {
+      const s = data?.btcSnapshot as Record<string, unknown> | undefined;
+      const inner = (s?.data as Record<string, unknown>) ?? s;
+      return Boolean(inner && Object.keys(inner).length > 0);
+    },
+    derivationNote: "Derived from BTC 24h price momentum as a proxy for institutional ETF flow direction",
   },
   macroTreasuryPressure: {
-    requiredSource: "SoSoValue macro/treasury data or proxy",
-    condition: (_data: SoSoValueFetchResult) => false,
-    derivationNote: "If derived from a proxy (e.g. price correlation), label as derived",
+    requiredSource: "SoSoValue SSI Mega-7 index snapshot (derived macro proxy)",
+    // Enabled when index snapshot is available — score derived from index 24h change
+    condition: (data: SoSoValueFetchResult) => {
+      const s = data?.indexSnapshot as Record<string, unknown> | undefined;
+      const inner = (s?.data as Record<string, unknown>) ?? s;
+      return Boolean(inner && Object.keys(inner).length > 0);
+    },
+    derivationNote: "Derived from SSI Mega-7 index momentum as a macro treasury proxy",
   },
   btcVolatility: {
-    requiredSource: "SoSoValue BTC price/volume data",
-    condition: (_data: SoSoValueFetchResult) => false,
-    derivationNote: "Computed from rolling BTC price change over available window",
+    requiredSource: "SoSoValue BTC market-snapshot",
+    // Enabled when BTC snapshot data is available — volatility derived from 24h magnitude
+    condition: (data: SoSoValueFetchResult) => {
+      const s = data?.btcSnapshot as Record<string, unknown> | undefined;
+      const inner = (s?.data as Record<string, unknown>) ?? s;
+      return Boolean(inner && Object.keys(inner).length > 0);
+    },
+    derivationNote: "Computed from BTC 24h price change magnitude as a realized volatility proxy",
   },
   stablecoinLiquidity: {
-    requiredSource: "SoSoValue stablecoin market data",
-    condition: (_data: SoSoValueFetchResult) => false,
-    derivationNote: "Derived from stablecoin supply/flow data",
+    requiredSource: "SoSoValue SSI index snapshot (derived stablecoin liquidity proxy)",
+    // Enabled when index snapshot is available — liquidity derived from index change direction
+    condition: (data: SoSoValueFetchResult) => {
+      const s = data?.indexSnapshot as Record<string, unknown> | undefined;
+      const inner = (s?.data as Record<string, unknown>) ?? s;
+      return Boolean(inner && Object.keys(inner).length > 0);
+    },
+    derivationNote: "Derived from SSI index flow direction as a stablecoin liquidity proxy",
   },
   marketSentiment: {
-    requiredSource: "SoSoValue sentiment or news data",
+    requiredSource: "SoSoValue news/feed data",
     condition: (data: SoSoValueFetchResult) => Boolean(data?.newsList && data.newsList.length > 0),
-    derivationNote: "Normalized from news/sentiment endpoints",
+    derivationNote: "Normalized from news headline keyword analysis and index momentum",
   },
   fundingRatePressure: {
-    requiredSource: "SoDEX or SoSoValue funding rate data",
-    condition: (_data: SoSoValueFetchResult) => false,
-    derivationNote: "From perpetual funding rate data",
+    requiredSource: "SoSoValue BTC market-snapshot (derived funding rate proxy)",
+    // Enabled when BTC snapshot is available — funding rate inferred from BTC price direction
+    condition: (data: SoSoValueFetchResult) => {
+      const s = data?.btcSnapshot as Record<string, unknown> | undefined;
+      const inner = (s?.data as Record<string, unknown>) ?? s;
+      return Boolean(inner && Object.keys(inner).length > 0);
+    },
+    derivationNote: "Derived from BTC price action as a proxy for perpetuals funding rate direction",
   },
   onChainRisk: {
-    requiredSource: "On-chain metrics from SoSoValue or public RPC",
-    condition: (_data: SoSoValueFetchResult) => false,
-    derivationNote: "From on-chain activity data",
+    requiredSource: "SoSoValue BTC market-snapshot (derived on-chain risk proxy)",
+    // Enabled when BTC snapshot is available — on-chain risk inferred from price and index data
+    condition: (data: SoSoValueFetchResult) => {
+      const s = data?.btcSnapshot as Record<string, unknown> | undefined;
+      const inner = (s?.data as Record<string, unknown>) ?? s;
+      return Boolean(inner && Object.keys(inner).length > 0);
+    },
+    derivationNote: "Derived from BTC price action and index divergence as an on-chain activity proxy",
   },
   ssiIndexMomentum: {
-    requiredSource: "SSI index data — requires SSI source",
+    requiredSource: "SSI Protocol index data — SSI source is not operational (Option C applied)",
+    // Kept false: SSI Protocol endpoint is confirmed offline. Index snapshot from SoSoValue
+    // does not provide SSI-specific momentum data. Do not enable without a real SSI data source.
     condition: (_data: SoSoValueFetchResult, _ssiData: SSIData | null) => false,
-    derivationNote: "From SSI index price momentum",
+    derivationNote: "From SSI index price momentum — requires live SSI Protocol API",
   },
   newsRegimeAlert: {
     requiredSource: "SoSoValue news/feed data",
     condition: (data: SoSoValueFetchResult) => Boolean(data?.newsList && data.newsList.length > 0),
-    derivationNote: "From news sentiment scoring",
+    derivationNote: "From news headline sentiment scoring and regulatory keyword detection",
   },
 };

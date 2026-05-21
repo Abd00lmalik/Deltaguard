@@ -36,13 +36,33 @@ export function normalizeSoSoValueData(
 ): MarketSignal[] {
   const now = new Date();
   
-  const btcSnapshot = sosoResult.btcSnapshot;
-  const indexSnapshot = sosoResult.indexSnapshot;
+  const btcRaw = (sosoResult.btcSnapshot as Record<string, unknown>);
+  // SoSoValue API may nest data inside a 'data' wrapper; unwrap if needed
+  const btcData = (btcRaw?.data as Record<string, unknown>) ?? btcRaw;
+  const btcSnapshot = btcData ?? {};
+  const indexRaw = (sosoResult.indexSnapshot as Record<string, unknown>);
+  const indexData = (indexRaw?.data as Record<string, unknown>) ?? indexRaw;
+  const indexSnapshot = indexData ?? {};
   const newsList = sosoResult.newsList;
 
-  // Use values from snapshots if available
-  const btcChange = btcSnapshot?.change_pct_24h !== undefined ? Number(btcSnapshot.change_pct_24h) : 0;
-  const indexChange = indexSnapshot?.['24h_change_pct'] !== undefined ? Number(indexSnapshot['24h_change_pct']) * 100 : 0;
+  // Use values from snapshots if available — check multiple common field name patterns
+  const btcChange: number = (() => {
+    const v =
+      btcSnapshot['change_pct_24h'] ??
+      btcSnapshot['price_change_percentage_24h'] ??
+      btcSnapshot['change24h'] ??
+      btcSnapshot['priceChangePercent'] ??
+      btcSnapshot['change_percentage_24h'];
+    return v !== undefined ? Number(v) : 0;
+  })();
+  const indexChange: number = (() => {
+    const v =
+      indexSnapshot['24h_change_pct'] ??
+      indexSnapshot['change_pct_24h'] ??
+      indexSnapshot['change24h'] ??
+      indexSnapshot['priceChangePercent'];
+    return v !== undefined ? Number(v) * (Math.abs(Number(v)) > 1 ? 1 : 100) : 0;
+  })();
 
   // Pre-calculate raw formulas so we can reference them if conditions are met
   const etfScore = Math.max(-100, Math.min(100, Math.round(btcChange * 25)));
