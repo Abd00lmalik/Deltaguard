@@ -5,10 +5,16 @@ import { useRef } from 'react';
 import { MOCK_SIGNALS } from '@/lib/mock/signals';
 import { SignalCard } from './SignalCard';
 import { staggerContainer, staggerItem } from '@/lib/utils/motion';
+import type { MarketSignal } from '@/types/signals';
 
-export function SignalFeed() {
+interface SignalFeedProps {
+  signals?: MarketSignal[];
+}
+
+export function SignalFeed({ signals }: SignalFeedProps) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: '-80px' });
+  const activeSignals = signals ?? MOCK_SIGNALS;
 
   return (
     <motion.div
@@ -18,7 +24,7 @@ export function SignalFeed() {
       initial="hidden"
       animate={inView ? 'visible' : 'hidden'}
     >
-      {MOCK_SIGNALS.map((signal) => (
+      {activeSignals.map((signal) => (
         <motion.div key={signal.id} variants={staggerItem}>
           <SignalCard signal={signal} />
         </motion.div>

@@ -4,14 +4,21 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { MOCK_PORTFOLIO_ASSETS } from '@/lib/mock/portfolio';
 import { GlowCard } from '@/components/ui/GlowCard';
 import { formatPercent } from '@/lib/utils/format';
+import type { PortfolioAsset } from '@/types/portfolio';
 
-export function ExposureChart() {
+interface ExposureChartProps {
+  assets?: PortfolioAsset[];
+}
+
+export function ExposureChart({ assets }: ExposureChartProps) {
+  const activeAssets = assets ?? MOCK_PORTFOLIO_ASSETS;
+
   return (
     <GlowCard className="p-5">
       <h3 className="font-sora text-base font-bold text-white">Risk Contribution</h3>
       <div className="mt-4 h-[280px]">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={MOCK_PORTFOLIO_ASSETS} layout="vertical" margin={{ left: 8, right: 12 }}>
+          <BarChart data={activeAssets} layout="vertical" margin={{ left: 8, right: 12 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.04)" horizontal={false} />
             <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: '#555', fontSize: 11 }} />
             <YAxis

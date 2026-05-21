@@ -19,15 +19,22 @@ export function LiveStatusBar() {
 
   useEffect(() => {
     let active = true;
-    fetch('/api/architecture/readiness')
-      .then((res) => res.json())
-      .then((data) => {
-        if (active) setReadiness(data);
-      })
-      .catch((err) => console.error('Failed to fetch readiness status:', err));
+
+    const checkHealth = () => {
+      fetch('/api/terminal/health')
+        .then((res) => res.json())
+        .then((data) => {
+          if (active) setReadiness(data);
+        })
+        .catch((err) => console.error('Failed to fetch health status:', err));
+    };
+
+    checkHealth();
+    const interval = setInterval(checkHealth, 60000);
 
     return () => {
       active = false;
+      clearInterval(interval);
     };
   }, []);
 

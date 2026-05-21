@@ -9,11 +9,14 @@ import { GlowCard } from '@/components/ui/GlowCard';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PillButton } from '@/components/ui/PillButton';
 import { SectionLabel } from '@/components/ui/SectionLabel';
+import type { CompositeScore, MarketSignal } from '@/types/signals';
 
 export default function TerminalSignalsPage() {
   const [status, setStatus] = useState<'loading' | 'ok' | 'error'>('loading');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [setup, setSetup] = useState<string | null>(null);
+  const [signals, setSignals] = useState<MarketSignal[] | undefined>(undefined);
+  const [composite, setComposite] = useState<CompositeScore | undefined>(undefined);
 
   async function checkSignals() {
     setStatus('loading');
@@ -26,6 +29,8 @@ export default function TerminalSignalsPage() {
         setSetup(data.setup ?? null);
         setStatus('error');
       } else {
+        setSignals(data.signals);
+        setComposite(data.composite);
         setStatus('ok');
       }
     } catch {
@@ -74,8 +79,8 @@ export default function TerminalSignalsPage() {
           </GlowCard>
         ) : (
           <>
-            <CompositeSignalScore />
-            <SignalFeed />
+            <CompositeSignalScore score={composite} />
+            <SignalFeed signals={signals} />
           </>
         )}
       </div>

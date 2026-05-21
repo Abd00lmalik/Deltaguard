@@ -1,6 +1,7 @@
 // DeltaGuard AI - SoSoValue Integration Server Client (Live mode only)
 
-import type { CompositeScore, MarketSignal, SignalCategory, SignalSeverity } from '@/types/signals';
+import type { CompositeScore, MarketSignal, SignalSeverity } from '@/types/signals';
+import { normalizeSoSoValueData } from './normalizer';
 
 const BASE_URL = process.env.SOSOVALUE_BASE_URL || 'https://openapi.sosovalue.com/openapi/v1';
 const API_KEY = process.env.SOSOVALUE_API_KEY ?? '';
@@ -27,79 +28,6 @@ export function calculateCompositeScore(signals: MarketSignal[]): number {
   );
   const rawScore = weighted.weight === 0 ? 0 : weighted.score / weighted.weight;
   return Math.round(Math.max(-100, Math.min(100, rawScore * 1.07)));
-}
-
-interface RawSignal {
-  id?: string;
-  category?: string;
-  label?: string;
-  score?: number;
-  severity?: string;
-  confidence?: number;
-  timestamp?: string;
-  generatedAt?: string;
-  explanation?: string;
-  source?: string;
-}
-
-interface SoSoValueSignalResponse {
-  signals?: RawSignal[];
-  generatedAt?: string;
-}
-
-interface SoSoValueCompositeScoreResponse {
-  value?: number;
-  score?: number;
-  label?: string;
-  regime?: string;
-  lastUpdated?: string;
-}
-
-function mapToMarketSignal(raw: RawSignal): MarketSignal {
-  const categories: SignalCategory[] = [
-    'etf-flow-pressure',
-    'macro-treasury-pressure',
-    'btc-volatility',
-    'stablecoin-liquidity',
-    'market-sentiment',
-    'funding-rate-pressure',
-    'onchain-risk',
-    'ssi-momentum',
-    'news-regime-alert'
-  ];
-
-  let category: SignalCategory = 'market-sentiment';
-  if (raw.category && categories.includes(raw.category as SignalCategory)) {
-    category = raw.category as SignalCategory;
-  }
-
-  let score = typeof raw.score === 'number' ? raw.score : 0;
-  if (score < -100) score = -100;
-  if (score > 100) score = 100;
-
-  let severity: SignalSeverity = 'medium';
-  const severities: SignalSeverity[] = ['critical', 'high', 'medium', 'low', 'positive'];
-  if (raw.severity && severities.includes(raw.severity.toLowerCase() as SignalSeverity)) {
-    severity = raw.severity.toLowerCase() as SignalSeverity;
-  } else {
-    if (score <= -75) severity = 'critical';
-    else if (score <= -50) severity = 'high';
-    else if (score >= 20) severity = 'positive';
-    else if (score < 0) severity = 'medium';
-    else severity = 'low';
-  }
-
-  return {
-    id: raw.id || `sig-${Math.random().toString(36).substring(2, 9)}`,
-    category,
-    label: raw.label || 'Market Signal',
-    score,
-    severity,
-    confidence: typeof raw.confidence === 'number' ? raw.confidence : 80,
-    timestamp: raw.timestamp || raw.generatedAt || new Date().toISOString(),
-    explanation: raw.explanation || 'No explanation provided by SoSoValue.',
-    source: raw.source || 'SoSoValue OpenAPI'
-  };
 }
 
 async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3, initialDelay = 1000): Promise<Response> {
@@ -145,66 +73,85 @@ export async function fetchMarketSignals(): Promise<MarketSignal[]> {
   if (!BASE_URL || !API_KEY) {
     throw new Error('SoSoValue credentials not configured.');
   }
-  const endpoint = BASE_URL.endsWith('/') ? `${BASE_URL}signals` : `${BASE_URL}/signals`;
-  const res = await fetchWithRetry(endpoint, {
-    headers: { 'x-soso-api-key': API_KEY }
-  });
-  if (!res.ok) throw new Error(`SoSoValue API error: ${res.status}`);
-  const data = (await res.json()) as SoSoValueSignalResponse;
-  const rawSignals = Array.isArray(data?.signals) ? data.signals : [];
-  return rawSignals.map(mapToMarketSignal);
+
+  let newsList = [];
+  let indexSnapshot = {};
+  let btcSnapshot = {};
+
+  // 1. Fetch news feed
+  try {
+    const newsEndpoint = BASE_URL.endsWith('/') ? `${BASE_URL}news` : `${BASE_URL}/news`;
+    const res = await fetchWithRetry(`${newsEndpoint}?page_size=20`, {
+      headers: { 'x-soso-api-key': API_KEY }
+    });
+    if (res.ok) {
+      const data = await res.json();
+      newsList = data?.list || [];
+    } else {
+      console.warn(`SoSoValue news API returned status ${res.status}`);
+    }
+  } catch (err) {
+    console.error('Failed to fetch news from SoSoValue:', err);
+  }
+
+  // 2. Fetch Index snapshot
+  try {
+    const indexEndpoint = BASE_URL.endsWith('/') ? `${BASE_URL}indices/ssimag7/market-snapshot` : `${BASE_URL}/indices/ssimag7/market-snapshot`;
+    const res = await fetchWithRetry(indexEndpoint, {
+      headers: { 'x-soso-api-key': API_KEY }
+    });
+    if (res.ok) {
+      indexSnapshot = await res.json();
+    } else {
+      console.warn(`SoSoValue index snapshot API returned status ${res.status}`);
+    }
+  } catch (err) {
+    console.error('Failed to fetch index snapshot from SoSoValue:', err);
+  }
+
+  // 3. Fetch BTC snapshot
+  try {
+    const btcEndpoint = BASE_URL.endsWith('/') ? `${BASE_URL}currencies/1673723677362319866/market-snapshot` : `${BASE_URL}/currencies/1673723677362319866/market-snapshot`;
+    const res = await fetchWithRetry(btcEndpoint, {
+      headers: { 'x-soso-api-key': API_KEY }
+    });
+    if (res.ok) {
+      btcSnapshot = await res.json();
+    } else {
+      console.warn(`SoSoValue BTC snapshot API returned status ${res.status}`);
+    }
+  } catch (err) {
+    console.error('Failed to fetch BTC snapshot from SoSoValue:', err);
+  }
+
+  return normalizeSoSoValueData(newsList, indexSnapshot, btcSnapshot);
 }
 
 export async function fetchCompositeScore(): Promise<CompositeScore> {
-  if (!BASE_URL || !API_KEY) {
-    throw new Error('SoSoValue credentials not configured.');
-  }
-  const endpoint = BASE_URL.endsWith('/') ? `${BASE_URL}composite-score` : `${BASE_URL}/composite-score`;
-  const res = await fetchWithRetry(endpoint, {
-    headers: { 'x-soso-api-key': API_KEY }
-  });
-  
-  if (!res.ok) {
-    // Fallback: calculate composite score from signals
-    try {
-      const signals = await fetchMarketSignals();
-      const score = calculateCompositeScore(signals);
-      let regime: 'risk-off' | 'caution' | 'neutral' | 'risk-on' = 'neutral';
-      let label = 'NEUTRAL';
-      if (score < -50) {
-        regime = 'risk-off';
-        label = 'RISK-OFF';
-      } else if (score <= 20) {
-        regime = 'caution';
-        label = 'CAUTION';
-      } else {
-        regime = 'risk-on';
-        label = 'RISK-ON';
-      }
-      return {
-        value: score,
-        label,
-        regime,
-        lastUpdated: new Date().toISOString()
-      };
-    } catch {
-      throw new Error(`SoSoValue API error: ${res.status}`);
+  // Rather than calling nonexistent endpoint `/composite-score`, calculate it from live signals
+  try {
+    const signals = await fetchMarketSignals();
+    const score = calculateCompositeScore(signals);
+    let regime: 'risk-off' | 'caution' | 'neutral' | 'risk-on' = 'neutral';
+    let label = 'NEUTRAL';
+    if (score < -50) {
+      regime = 'risk-off';
+      label = 'RISK-OFF';
+    } else if (score <= 20) {
+      regime = 'caution';
+      label = 'CAUTION';
+    } else {
+      regime = 'risk-on';
+      label = 'RISK-ON';
     }
+    return {
+      value: score,
+      label,
+      regime,
+      lastUpdated: new Date().toISOString()
+    };
+  } catch (err) {
+    console.error('Failed to calculate composite score from live signals:', err);
+    throw err;
   }
-  const raw = (await res.json()) as SoSoValueCompositeScoreResponse;
-  const value = raw.value ?? raw.score ?? 0;
-  let regime: 'risk-off' | 'caution' | 'neutral' | 'risk-on' = 'neutral';
-  if (raw.regime === 'risk-off' || raw.regime === 'caution' || raw.regime === 'neutral' || raw.regime === 'risk-on') {
-    regime = raw.regime;
-  } else {
-    if (value < -50) regime = 'risk-off';
-    else if (value <= 20) regime = 'caution';
-    else regime = 'risk-on';
-  }
-  return {
-    value,
-    label: raw.label ?? regime.toUpperCase(),
-    regime,
-    lastUpdated: raw.lastUpdated ?? new Date().toISOString()
-  };
 }
