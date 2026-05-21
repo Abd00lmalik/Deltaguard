@@ -12,6 +12,7 @@ export { MOCK_PENDING_ORDER as pendingOrder } from '@/lib/mock/orders';
 
 // Simulated execution — always succeeds after 1.5s delay
 export async function submitOrder(order: unknown): Promise<{ orderId: string; status: string }> {
+  console.log('Simulated order submission:', order);
   await new Promise((r) => setTimeout(r, 1500));
   return {
     orderId: `DEMO-${Date.now()}`,

@@ -36,11 +36,12 @@ export async function GET() {
       source: 'live',
       fetchedAt: new Date().toISOString(),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[DeltaGuard] Failed to fetch live SoSoValue signals:', error);
+    const errorMessage = error instanceof Error ? error.message : 'SoSoValue fetch failed';
     return NextResponse.json(
       {
-        error: error.message || 'SoSoValue fetch failed',
+        error: errorMessage,
         code: 'SOSOVALUE_FETCH_FAILED',
       },
       { status: 502 }

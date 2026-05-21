@@ -5,8 +5,9 @@ export async function GET() {
   try {
     const state = await getExecutionState();
     return NextResponse.json(state, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to fetch status' }, { status: 500 });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to fetch status';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
 export const dynamic = 'force-dynamic';

@@ -4,14 +4,8 @@ import { getExecutionState, setExecutionState } from '@/lib/storage/execution-st
 import { transitionTo } from '@/lib/execution/state-machine';
 import { submitOrder } from '@/lib/providers/live-provider';
 
-export async function POST(req: Request) {
+export async function POST() {
   const readiness = checkLiveReadiness();
-  let body: any = {};
-  try {
-    body = await req.json();
-  } catch {
-    // Ignore parse error
-  }
 
   const current = await getExecutionState();
 
@@ -131,8 +125,9 @@ export async function POST(req: Request) {
 
     await setExecutionState(submittedState);
     return NextResponse.json({ state: submittedState });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[DeltaGuard] Live order execution failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const failedState = {
       ...current,
       phase: 'FAILED' as const,
@@ -142,11 +137,11 @@ export async function POST(req: Request) {
         {
           phase: 'FAILED' as const,
           timestamp: new Date().toISOString(),
-          message: `Execution failed: ${error.message || 'Unknown error'}`
+          message: `Execution failed: ${errorMessage}`
         }
       ]
     };
     await setExecutionState(failedState);
-    return NextResponse.json({ state: failedState, error: error.message || 'Execution failed' }, { status: 502 });
+    return NextResponse.json({ state: failedState, error: errorMessage }, { status: 502 });
   }
 }

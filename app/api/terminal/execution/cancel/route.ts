@@ -22,7 +22,8 @@ export async function POST() {
     
     await setExecutionState(cancelledState);
     return NextResponse.json(cancelledState);
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message || 'Failed to cancel execution' }, { status: 500 });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to cancel execution';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }

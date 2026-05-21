@@ -56,7 +56,6 @@ export default function TerminalAgentPage() {
 
   useEffect(() => {
     void runScan();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

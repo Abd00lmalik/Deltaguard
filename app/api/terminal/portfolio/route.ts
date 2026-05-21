@@ -24,11 +24,12 @@ export async function GET() {
       source: 'live',
       fetchedAt: new Date().toISOString(),
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[DeltaGuard] Failed to fetch live SSI portfolio:', error);
+    const errorMessage = error instanceof Error ? error.message : 'SSI fetch failed';
     return NextResponse.json(
       {
-        error: error.message || 'SSI fetch failed',
+        error: errorMessage,
         code: 'SSI_FETCH_FAILED',
       },
       { status: 502 }

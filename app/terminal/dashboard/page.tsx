@@ -30,6 +30,12 @@ const loadingMessages = [
 
 interface ScanError { error: string; code?: string; setup?: string }
 
+interface AssetData {
+  valueUsd: number;
+  class: string;
+  delta: number;
+}
+
 export default function TerminalDashboardPage() {
   const [scanState, setScanState] = useState<'idle' | 'scanning' | 'complete' | 'error'>('idle');
   const [agentOutput, setAgentOutput] = useState<AgentReasoningOutput | null>(null);
@@ -41,12 +47,12 @@ export default function TerminalDashboardPage() {
   useEffect(() => {
     fetch('/api/terminal/portfolio')
       .then((r) => r.json())
-      .then((data: any) => {
+      .then((data: { assets?: AssetData[] }) => {
         if (data?.assets) {
-          const total = data.assets.reduce((s: number, a: any) => s + a.valueUsd, 0);
-          const directional = data.assets.filter((a: any) => a.class !== 'stablecoin');
-          const totalDir = directional.reduce((s: number, a: any) => s + a.valueUsd, 0);
-          const wDelta = directional.reduce((s: number, a: any) => s + a.delta * a.valueUsd, 0);
+          const total = data.assets.reduce((s: number, a: AssetData) => s + a.valueUsd, 0);
+          const directional = data.assets.filter((a: AssetData) => a.class !== 'stablecoin');
+          const totalDir = directional.reduce((s: number, a: AssetData) => s + a.valueUsd, 0);
+          const wDelta = directional.reduce((s: number, a: AssetData) => s + a.delta * a.valueUsd, 0);
           setPortfolioValue(total);
           setNetDelta(totalDir > 0 ? wDelta / totalDir : 0);
         }

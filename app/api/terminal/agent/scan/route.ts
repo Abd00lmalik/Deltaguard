@@ -127,11 +127,12 @@ export async function POST() {
     }
 
     return NextResponse.json(output, { headers: { 'Cache-Control': 'no-store' } });
-  } catch (error: any) {
+  } catch (error) {
     console.error('[DeltaGuard] Agent scan failed:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Agent scan failed';
     return NextResponse.json(
       {
-        error: error.message || 'Agent scan failed',
+        error: errorMessage,
         code: 'SCAN_FAILED',
       },
       { status: 502 }
