@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle, RefreshCw, XCircle } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { ExecutionTimeline } from '@/components/execution/ExecutionTimeline';
 import { GlowCard } from '@/components/ui/GlowCard';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PillButton } from '@/components/ui/PillButton';
 import { SectionLabel } from '@/components/ui/SectionLabel';
@@ -12,6 +13,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import type { OrderTimelineStep } from '@/types/execution';
 
 type ExecutionPhase =
+  | 'NONE'
   | 'AWAITING_USER_APPROVAL'
   | 'APPROVED'
   | 'ORDER_PREPARING'
@@ -22,7 +24,7 @@ type ExecutionPhase =
 
 interface ExecutionState {
   phase: ExecutionPhase;
-  hedgeOrder: {
+  hedgeOrder?: {
     id: string;
     pair: string;
     direction: 'long' | 'short';
@@ -30,7 +32,7 @@ interface ExecutionState {
     notionalUsd: number;
     estimatedPrice: number;
     timeline: OrderTimelineStep[];
-  };
+  } | null;
   orderId?: string;
   updatedAt: string;
   log: { phase: ExecutionPhase; timestamp: string; message: string }[];
@@ -106,7 +108,7 @@ export default function TerminalExecutionPage() {
 
   useEffect(() => { void fetchStatus(); }, []);
 
-  const phase = state?.phase ?? 'AWAITING_USER_APPROVAL';
+  const phase = state?.phase ?? 'NONE';
   const order = state?.hedgeOrder;
 
   return (
@@ -144,6 +146,12 @@ export default function TerminalExecutionPage() {
               </div>
             </div>
           </GlowCard>
+        ) : (!order || phase === 'NONE') ? (
+          <EmptyState
+            title="No Orders Staged"
+            description="Run a live scan on the dashboard with your portfolio connected to generate a hedge order."
+            action={<PillButton onClick={() => window.location.href = '/terminal/dashboard'}>Go to Dashboard</PillButton>}
+          />
         ) : (
           <>
             {/* Setup warning banner */}

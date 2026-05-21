@@ -150,54 +150,32 @@ export async function getSodexAccountState(address: string): Promise<{
   collateralUsd: number;
 }> {
   if (!BASE_URL) {
-    const numericHash = Array.from(address).reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const balance = 50000 + (numericHash % 75000);
-    const collateral = balance * 0.95;
-    return {
-      address,
-      accountId: ACCOUNT_ID,
-      balanceUsd: balance,
-      marginRatio: 0.08 + (numericHash % 5) / 100,
-      leverage: 2 + (numericHash % 3),
-      positionsCount: 1 + (numericHash % 3),
-      collateralUsd: collateral
-    };
+    throw new Error('SoDEX API base URL not configured.');
   }
 
   const endpoint = BASE_URL.endsWith('/')
     ? `${BASE_URL}trade/account?address=${encodeURIComponent(address)}`
     : `${BASE_URL}/trade/account?address=${encodeURIComponent(address)}`;
-  try {
-    const res = await fetch(endpoint, {
-      headers: {
-        'Accept': 'application/json',
-        'X-API-Key': API_KEY_NAME
-      }
-    });
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        address: address,
-        accountId: data.accountId || ACCOUNT_ID,
-        balanceUsd: Number(data.balanceUsd || data.balance || 100000),
-        marginRatio: Number(data.marginRatio || 0.05),
-        leverage: Number(data.leverage || 3),
-        positionsCount: Number(data.positionsCount || 1),
-        collateralUsd: Number(data.collateralUsd || 95000)
-      };
+    
+  const res = await fetch(endpoint, {
+    headers: {
+      'Accept': 'application/json',
+      'X-API-Key': API_KEY_NAME
     }
-  } catch (err) {
-    console.error('Failed to fetch real SoDEX account state, using computed fallback:', err);
+  });
+  
+  if (!res.ok) {
+    throw new Error(`SoDEX API error: ${res.status} - ${await res.text()}`);
   }
-
-  const numericHash = Array.from(address).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  
+  const data = await res.json();
   return {
-    address,
-    accountId: ACCOUNT_ID,
-    balanceUsd: 75000 + (numericHash % 50000),
-    marginRatio: 0.06 + (numericHash % 4) / 100,
-    leverage: 3,
-    positionsCount: 2,
-    collateralUsd: 72000 + (numericHash % 48000)
+    address: address,
+    accountId: data.accountId || ACCOUNT_ID,
+    balanceUsd: Number(data.balanceUsd || data.balance || 0),
+    marginRatio: Number(data.marginRatio || 0),
+    leverage: Number(data.leverage || 0),
+    positionsCount: Number(data.positionsCount || 0),
+    collateralUsd: Number(data.collateralUsd || 0)
   };
 }

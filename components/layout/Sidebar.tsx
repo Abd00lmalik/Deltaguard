@@ -46,7 +46,7 @@ export function Sidebar({ mode = 'demo' }: SidebarProps) {
     { label: 'Signals', href: `${prefix}/signals`, icon: Activity },
     { label: 'Agent', href: `${prefix}/agent`, icon: Brain },
     { label: 'Execution', href: `${prefix}/execution`, icon: Zap },
-    { label: 'Stress Test', href: `${prefix}/stress-test`, icon: TrendingDown },
+    ...(mode === 'demo' ? [{ label: 'Stress Test', href: `${prefix}/stress-test`, icon: TrendingDown }] : []),
     { label: 'Architecture', href: '/integrations', icon: Layers },
     { label: 'Settings', href: `${prefix}/settings`, icon: Settings }
   ];

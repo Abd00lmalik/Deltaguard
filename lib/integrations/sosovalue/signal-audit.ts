@@ -31,22 +31,22 @@ export const SIGNAL_DISPLAY_NAMES: Record<string, string> = {
 export const SIGNAL_INTEGRITY_MAP = {
   etfFlowPressure: {
     requiredSource: "SoSoValue ETF/market flow data",
-    condition: (data: SoSoValueFetchResult) => Boolean(data?.btcSnapshot && typeof data.btcSnapshot.change_pct_24h === 'number'),
+    condition: (_data: SoSoValueFetchResult) => false,
     derivationNote: "Derived from ETF net flow direction and magnitude",
   },
   macroTreasuryPressure: {
     requiredSource: "SoSoValue macro/treasury data or proxy",
-    condition: (data: SoSoValueFetchResult) => Boolean(data?.indexSnapshot && typeof data.indexSnapshot['24h_change_pct'] === 'number'),
+    condition: (_data: SoSoValueFetchResult) => false,
     derivationNote: "If derived from a proxy (e.g. price correlation), label as derived",
   },
   btcVolatility: {
     requiredSource: "SoSoValue BTC price/volume data",
-    condition: (data: SoSoValueFetchResult) => Boolean(data?.btcSnapshot && typeof data.btcSnapshot.change_pct_24h === 'number'),
+    condition: (_data: SoSoValueFetchResult) => false,
     derivationNote: "Computed from rolling BTC price change over available window",
   },
   stablecoinLiquidity: {
     requiredSource: "SoSoValue stablecoin market data",
-    condition: (data: SoSoValueFetchResult) => Boolean(data?.indexSnapshot && typeof data.indexSnapshot['24h_change_pct'] === 'number'),
+    condition: (_data: SoSoValueFetchResult) => false,
     derivationNote: "Derived from stablecoin supply/flow data",
   },
   marketSentiment: {
@@ -56,17 +56,17 @@ export const SIGNAL_INTEGRITY_MAP = {
   },
   fundingRatePressure: {
     requiredSource: "SoDEX or SoSoValue funding rate data",
-    condition: (data: SoSoValueFetchResult) => Boolean(data?.btcSnapshot && typeof data.btcSnapshot.change_pct_24h === 'number'),
+    condition: (_data: SoSoValueFetchResult) => false,
     derivationNote: "From perpetual funding rate data",
   },
   onChainRisk: {
     requiredSource: "On-chain metrics from SoSoValue or public RPC",
-    condition: (data: SoSoValueFetchResult) => Boolean(data?.btcSnapshot && typeof data.btcSnapshot.change_pct_24h === 'number'),
+    condition: (_data: SoSoValueFetchResult) => false,
     derivationNote: "From on-chain activity data",
   },
   ssiIndexMomentum: {
     requiredSource: "SSI index data — requires SSI source",
-    condition: (_data: SoSoValueFetchResult, ssiData: SSIData | null) => Boolean(ssiData?.available),
+    condition: (_data: SoSoValueFetchResult, _ssiData: SSIData | null) => false,
     derivationNote: "From SSI index price momentum",
   },
   newsRegimeAlert: {

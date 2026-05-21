@@ -10,17 +10,19 @@ import { getSoSoValueData } from '@/lib/integrations/sosovalue/provider';
 import { fetchSSIData } from '@/lib/integrations/ssi/server-client';
 import { type ProviderError } from '@/lib/types/signal-source';
 
-async function checkSoDEXPublicHealth(): Promise<{ available: boolean; httpStatus: number | null; error?: string }> {
+async function checkSoDEXPublicHealth(): Promise<{ available: boolean; httpStatus: number | null; error?: string; latencyMs?: number }> {
   const baseUrl = process.env.SODEX_BASE_URL;
   if (!baseUrl) return { available: false, httpStatus: null, error: 'SODEX_BASE_URL not configured' };
   try {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), 4000);
+    const startMs = Date.now();
     const res = await fetch(baseUrl, { method: 'GET', signal: controller.signal });
+    const latencyMs = Date.now() - startMs;
     clearTimeout(id);
-    return { available: res.status >= 200 && res.status < 500, httpStatus: res.status };
+    return { available: res.status >= 200 && res.status < 500, httpStatus: res.status, latencyMs };
   } catch (err) {
-    return { available: false, httpStatus: null, error: err instanceof Error ? err.message : String(err) };
+    return { available: false, httpStatus: null, error: err instanceof Error ? err.message : String(err), latencyMs: undefined };
   }
 }
 
@@ -52,6 +54,9 @@ export async function GET() {
       signalSource:      sosoData?.source ?? 'unavailable',
       providerHealth:    sosoData?.providerHealth ?? 'unavailable',
       cacheAgeSeconds:   sosoData?.cacheAgeSeconds ?? null,
+      fetchLatencyMs:    sosoData?.fetchLatencyMs ?? null,
+      responseSizeBytes: sosoData?.responseSizeBytes ?? null,
+      signalCount:       sosoData ? (sosoData.newsList?.length || 0) + Object.keys(sosoData.indexSnapshot || {}).length + Object.keys(sosoData.btcSnapshot || {}).length : 0,
       lastUpdated:       sosoData?.lastUpdated ?? null,
       available:         sosoData?.available ?? false,
     },
@@ -65,6 +70,7 @@ export async function GET() {
     sodexPublic: {
       baseUrlHost:       sodexHost || 'not configured',
       httpStatus:        sodexData?.httpStatus ?? null,
+      latencyMs:         sodexData?.latencyMs ?? null,
       available:         sodexData?.available ?? false,
       error:             sodexData?.error ?? null,
     },

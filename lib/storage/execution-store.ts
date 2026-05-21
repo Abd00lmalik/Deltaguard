@@ -1,10 +1,11 @@
 // DeltaGuard AI - Execution State Storage Provider
 // Supports persistent storage via Vercel KV or in-memory fallback
 
-import { MOCK_PENDING_ORDER } from '@/lib/mock/orders';
+
 import type { HedgeOrder } from '@/types/execution';
 
 export type ExecutionPhase =
+  | 'NONE'
   | 'AWAITING_USER_APPROVAL'
   | 'APPROVED'
   | 'ORDER_PREPARING'
@@ -15,7 +16,7 @@ export type ExecutionPhase =
 
 export interface ExecutionState {
   phase: ExecutionPhase;
-  hedgeOrder: HedgeOrder;
+  hedgeOrder: HedgeOrder | null;
   orderId?: string;
   updatedAt: string;
   log: Array<{
@@ -30,16 +31,10 @@ let inMemoryState: ExecutionState | null = null;
 
 function getInitialState(): ExecutionState {
   return {
-    phase: 'AWAITING_USER_APPROVAL',
-    hedgeOrder: MOCK_PENDING_ORDER,
+    phase: 'NONE',
+    hedgeOrder: null,
     updatedAt: new Date().toISOString(),
-    log: [
-      {
-        phase: 'AWAITING_USER_APPROVAL',
-        timestamp: new Date().toISOString(),
-        message: 'Awaiting user confirmation to execute portfolio hedge.'
-      }
-    ]
+    log: []
   };
 }
 

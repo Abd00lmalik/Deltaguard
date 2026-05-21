@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { checkLiveReadiness } from '@/lib/config/live-readiness';
-import { portfolioAssets, getSodexAccountState } from '@/lib/providers/live-provider';
+import { getSodexAccountState } from '@/lib/providers/live-provider';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -18,21 +17,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const readiness = checkLiveReadiness();
-
-  if (!readiness.ssi) {
-    return NextResponse.json(
-      {
-        error: 'SSI exposure unavailable',
-        code: 'SSI_NOT_CONFIGURED',
-        setup: 'Set SSI_API_BASE_URL in your environment.',
-      },
-      { status: 503 }
-    );
-  }
-
   try {
-    const assets = await portfolioAssets(address);
     let sodexAccountState = null;
     
     try {
@@ -42,19 +27,18 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      assets,
       sodexAccountState,
       address,
       source: 'live',
       fetchedAt: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('[DeltaGuard] Failed to fetch live SSI portfolio:', error);
-    const errorMessage = error instanceof Error ? error.message : 'SSI fetch failed';
+    console.error('[DeltaGuard] Failed to fetch SoDEX state:', error);
+    const errorMessage = error instanceof Error ? error.message : 'SoDEX fetch failed';
     return NextResponse.json(
       {
         error: errorMessage,
-        code: 'SSI_FETCH_FAILED',
+        code: 'SODEX_FETCH_FAILED',
       },
       { status: 502 }
     );

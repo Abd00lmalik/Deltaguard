@@ -39,7 +39,10 @@ export interface SoSoValueFetchResult {
   btcSnapshot: BtcSnapshot;
   errors: ProviderError[];
   lastUpdated: string;
+  lastUpdated: string;
   cacheAgeSeconds?: number;
+  fetchLatencyMs?: number;
+  responseSizeBytes?: number;
 }
 
 const BASE_URL = process.env.SOSOVALUE_BASE_URL || 'https://openapi.sosovalue.com/openapi/v1';
@@ -110,13 +113,18 @@ async function fetchFromSoSoValue(): Promise<SoSoValueFetchResult> {
         httpStatus: null,
         message: "SoSoValue API key or base URL is not configured in the environment."
       }],
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      fetchLatencyMs: 0,
+      responseSizeBytes: 0
     };
   }
 
   let newsList: NewsItem[] = [];
   let indexSnapshot: IndexSnapshot = {};
   let btcSnapshot: BtcSnapshot = {};
+  
+  let totalBytes = 0;
+  const startMs = Date.now();
 
   let newsSuccess = false;
   let indexSuccess = false;
@@ -129,7 +137,9 @@ async function fetchFromSoSoValue(): Promise<SoSoValueFetchResult> {
       headers: { 'x-soso-api-key': API_KEY }
     });
     if (res.ok) {
-      const data = await res.json();
+      const text = await res.text();
+      totalBytes += text.length;
+      const data = JSON.parse(text);
       newsList = data?.list || [];
       newsSuccess = true;
     } else {
@@ -156,7 +166,9 @@ async function fetchFromSoSoValue(): Promise<SoSoValueFetchResult> {
       headers: { 'x-soso-api-key': API_KEY }
     });
     if (res.ok) {
-      indexSnapshot = await res.json();
+      const text = await res.text();
+      totalBytes += text.length;
+      indexSnapshot = JSON.parse(text);
       indexSuccess = true;
     } else {
       errors.push({
@@ -182,7 +194,9 @@ async function fetchFromSoSoValue(): Promise<SoSoValueFetchResult> {
       headers: { 'x-soso-api-key': API_KEY }
     });
     if (res.ok) {
-      btcSnapshot = await res.json();
+      const text = await res.text();
+      totalBytes += text.length;
+      btcSnapshot = JSON.parse(text);
       btcSuccess = true;
     } else {
       errors.push({
@@ -223,6 +237,8 @@ async function fetchFromSoSoValue(): Promise<SoSoValueFetchResult> {
     indexSnapshot,
     btcSnapshot,
     errors,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: new Date().toISOString(),
+    fetchLatencyMs: Date.now() - startMs,
+    responseSizeBytes: totalBytes
   };
 }

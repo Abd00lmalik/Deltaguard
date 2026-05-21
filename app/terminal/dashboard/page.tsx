@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { AlertTriangle, ArrowUpRight, RefreshCw } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, RefreshCw, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Topbar } from '@/components/layout/Topbar';
 import { DGMetricCard } from '@/components/ui/MetricCard';
@@ -15,7 +15,6 @@ import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
 import { SignalOverview } from '@/components/dashboard/SignalOverview';
 import { HedgeProposalCard } from '@/components/agent/HedgeProposalCard';
 import { ExecutionTimeline } from '@/components/execution/ExecutionTimeline';
-import { MOCK_PENDING_ORDER } from '@/lib/mock/orders';
 import { formatCurrency } from '@/lib/utils/format';
 import { staggerContainer, staggerItem, slideInRight } from '@/lib/utils/motion';
 import type { AgentReasoningOutput } from '@/types/agent';
@@ -103,15 +102,15 @@ export default function TerminalDashboardPage() {
     },
     {
       label: 'Composite Signal Score',
-      value: agentOutput ? String(agentOutput.compositeScore) : '—',
-      subtext: agentOutput ? `${agentOutput.decision.toUpperCase()} regime` : 'Run scan to fetch',
+      value: agentOutput?.compositeScore != null ? String(agentOutput.compositeScore) : '—',
+      subtext: agentOutput?.decision ? `${agentOutput.decision.toUpperCase()} regime` : 'Run scan to fetch',
       trend: 'down' as const,
       highlight: 'danger' as const
     },
     {
       label: 'Agent Decision',
-      value: agentOutput ? agentOutput.decision.toUpperCase() : '—',
-      subtext: agentOutput ? `Confidence: ${agentOutput.confidence}%` : 'Run scan to fetch',
+      value: agentOutput?.decision ? agentOutput.decision.toUpperCase() : '—',
+      subtext: agentOutput?.confidence != null ? `Confidence: ${agentOutput.confidence}%` : 'Run scan to fetch',
       highlight: agentOutput?.decision === 'hedge' ? ('positive' as const) : ('warning' as const)
     }
   ];
@@ -183,14 +182,23 @@ export default function TerminalDashboardPage() {
               </motion.div>
             </div>
 
-            <div>
-              <ExecutionTimeline steps={MOCK_PENDING_ORDER.timeline} preview />
-              <Link
-                href="/terminal/execution"
-                className="mt-4 inline-flex items-center gap-2 font-manrope text-sm font-semibold text-accent-lime hover:text-white"
-              >
-                View Live Execution Console <ArrowUpRight className="h-4 w-4" />
-              </Link>
+            <div className="rounded-2xl border border-accent-lime/10 bg-accent-lime/[0.03] p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-manrope text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted">Live Execution Console</p>
+                  <p className="mt-1 font-sora text-sm font-bold text-white">Order Queue</p>
+                  <p className="mt-1.5 font-manrope text-xs leading-5 text-text-secondary">
+                    Prepared hedge orders awaiting approval are staged in the execution console.
+                    Run a scan with portfolio exposure to generate a real order ticket.
+                  </p>
+                </div>
+                <Link
+                  href="/terminal/execution"
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-accent-lime-dim px-4 py-2.5 font-manrope text-sm font-semibold text-accent-lime transition-colors hover:bg-accent-lime/10"
+                >
+                  Open Console <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              </div>
             </div>
           </>
         )}
