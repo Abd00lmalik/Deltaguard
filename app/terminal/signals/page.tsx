@@ -77,7 +77,7 @@ export default function TerminalSignalsPage() {
           <SectionLabel>Market Intelligence</SectionLabel>
           <h1 className="mt-3 font-sora text-2xl font-bold text-white">Market Signals</h1>
           <p className="mt-2 max-w-2xl font-manrope text-sm leading-6 text-text-secondary">
-            Nine live market intelligence signals normalized into a single defensive regime score via SoSoValue OpenAPI.
+            Nine market intelligence signals normalized into a single defensive regime score via live SoSoValue OpenAPI data.
           </p>
           {/* Dynamic source badge — never hardcoded */}
           {status !== 'loading' && (
@@ -92,7 +92,19 @@ export default function TerminalSignalsPage() {
                   {summary.unavailable > 0 && ` · ${summary.unavailable} unavailable`}
                 </span>
               )}
+              {/* Explain derived signals inline */}
+              {summary && summary.available > 0 && (
+                <span className="rounded-lg bg-amber-500/10 px-2 py-0.5 font-manrope text-[10px] font-semibold text-amber-400">
+                  DERIVED — signals computed from BTC & SSI index data proxies
+                </span>
+              )}
             </div>
+          )}
+          {/* Provenance note shown once signals load */}
+          {status === 'ok' && signals && signals.length > 0 && (
+            <p className="mt-3 font-manrope text-[11px] text-text-muted max-w-2xl">
+              <span className="text-accent-lime font-semibold">Data provenance:</span> ETF Flow Pressure, BTC Volatility, Funding Rate Pressure, and On-Chain Risk are derived from BTC 24h price momentum via SoSoValue market-snapshot. Macro Treasury Pressure and Stablecoin Liquidity are derived from the SSI Mega-7 index. Market Sentiment and News/Regime Alert are computed directly from SoSoValue news feed. SSI Index Momentum is unavailable (SSI Protocol offline).
+            </p>
           )}
         </header>
 

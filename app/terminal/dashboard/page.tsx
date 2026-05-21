@@ -43,7 +43,11 @@ export default function TerminalDashboardPage() {
   const [netDelta, setNetDelta] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch('/api/terminal/portfolio')
+    // Read the connected wallet address from localStorage (set during MetaMask connection)
+    const storedAddr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
+    if (!storedAddr) return; // Don't fetch if no wallet connected yet
+
+    fetch(`/api/terminal/portfolio?address=${encodeURIComponent(storedAddr)}`)
       .then((r) => r.json())
       .then((data: { assets?: AssetData[] }) => {
         if (data?.assets) {

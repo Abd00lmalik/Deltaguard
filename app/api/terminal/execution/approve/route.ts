@@ -37,7 +37,7 @@ export async function POST() {
         {
           phase: 'ORDER_PREPARING' as const,
           timestamp: new Date().toISOString(),
-          message: 'Order prepared. Signed execution requires SODEX_API_KEY, SODEX_API_PRIVATE_KEY, SODEX_ACCOUNT_ID, and SODEX_ACCOUNT_ADDRESS.',
+          message: 'Order prepared. Signed execution requires SODEX_API_KEY, SODEX_API_PRIVATE_KEY, and SODEX_ACCOUNT_ID to be configured in Vercel.',
         },
       ],
     };
@@ -47,7 +47,7 @@ export async function POST() {
       executionStopped: true,
       reason: 'SIGNED_EXECUTION_NOT_CONFIGURED',
       message: 'Order has been prepared and approved. Signed testnet execution requires additional setup.',
-      setupRequired: ['SODEX_API_KEY', 'SODEX_API_PRIVATE_KEY', 'SODEX_ACCOUNT_ID', 'SODEX_ACCOUNT_ADDRESS'],
+      setupRequired: ['SODEX_API_KEY', 'SODEX_API_PRIVATE_KEY', 'SODEX_ACCOUNT_ID'],
     });
   }
 

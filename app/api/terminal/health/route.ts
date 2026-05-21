@@ -35,12 +35,15 @@ async function checkSoDEXPublicHealth(): Promise<{ healthy: boolean; status: num
 
   try {
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), 4000);
+    const id = setTimeout(() => controller.abort(), 5000);
     const perpsBase = resolvePerpsBase(baseUrl);
     const res = await fetch(perpsBase, { method: 'GET', signal: controller.signal });
     clearTimeout(id);
-    // 200-499 means the server is up and responding
-    return { healthy: res.status >= 200 && res.status < 500, status: res.status };
+    // ANY HTTP response (1xx-4xx) = server is alive and reachable.
+    // 401/403 = server is up and enforcing auth correctly — this is healthy.
+    // 404 = endpoint exists but GET not supported — server is still up.
+    // Only 5xx = server error = degraded. Network timeout/error = unavailable.
+    return { healthy: res.status < 500, status: res.status };
   } catch (err) {
     return { healthy: false, status: null, error: err instanceof Error ? err.message : String(err) };
   }
@@ -68,17 +71,19 @@ export async function GET() {
     ? (ssiData.setupRequired ? 'setup_required' : ssiData.available ? 'connected' : 'unavailable')
     : 'unavailable';
 
-  // SoDEX Public
+  // SoDEX Public — connected if server responds (any non-5xx = server is up)
   const sodexPublicHealth: ProviderHealth = sodexData?.healthy
-    ? (sodexData.status !== null && sodexData.status >= 200 && sodexData.status < 300 ? 'connected' : 'degraded')
+    ? 'connected'
+    : sodexData !== null && sodexData.status === null
+    ? 'unavailable'
+    : !process.env.SODEX_BASE_URL
+    ? 'setup_required'
     : 'unavailable';
 
   // SoDEX Signed — requires valid private key + account ID + working public connection
   const sodexSignedHealth: ProviderHealth =
     process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID && sodexPublicHealth === 'connected'
       ? 'connected'
-      : process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID && sodexPublicHealth === 'degraded'
-      ? 'degraded'
       : process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_ACCOUNT_ID
       ? 'degraded'
       : 'setup_required';
@@ -86,13 +91,13 @@ export async function GET() {
   return NextResponse.json({
     sosovalue:   { status: sosoHealth,       connected: sosoHealth === 'connected' || sosoHealth === 'degraded' },
     ssi:         { status: ssiHealth,        connected: ssiHealth === 'connected' },
-    sodexPublic: { status: sodexPublicHealth, connected: sodexPublicHealth === 'connected' || sodexPublicHealth === 'degraded' },
+    sodexPublic: { status: sodexPublicHealth, connected: sodexPublicHealth === 'connected' },
     sodexSigned: { status: sodexSignedHealth, connected: sodexSignedHealth === 'connected' || sodexSignedHealth === 'degraded' },
     database:    { status: process.env.DATABASE_URL ? 'connected' : 'setup_required', connected: Boolean(process.env.DATABASE_URL) },
     // Legacy boolean fields for backward compat with LiveStatusBar
     sosovalue_ok:  sosoHealth === 'connected' || sosoHealth === 'degraded',
     ssi_ok:        ssiHealth  === 'connected',
-    sodexPublic_ok: sodexPublicHealth === 'connected' || sodexPublicHealth === 'degraded',
+    sodexPublic_ok: sodexPublicHealth === 'connected',
     sodexSigned_ok: sodexSignedHealth === 'connected' || sodexSignedHealth === 'degraded',
     checkedAt: new Date().toISOString(),
     signalSource: sosoData?.source ?? 'unavailable',

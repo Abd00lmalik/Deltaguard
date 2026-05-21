@@ -17,7 +17,7 @@ import { fetchSSIData } from '@/lib/integrations/ssi/server-client';
 import { normalizeSoSoValueData } from '@/lib/integrations/sosovalue/normalizer';
 import { calculateCompositeScore } from '@/lib/integrations/sosovalue/server-client';
 import { runAgentScan } from '@/lib/agent/decision-engine';
-import { calculateNetDelta, calculateRiskScore } from '@/lib/risk/delta-engine';
+import { calculateNetDelta, calculateRiskScore, calculateHedgeSize, getLiveBtcPrice } from '@/lib/risk/delta-engine';
 import { determineAgentMode, getExecutionBlockers, buildRecommendation, type AgentCapabilities } from '@/lib/agent/capabilities';
 import { type PortfolioAsset } from '@/types/portfolio';
 import { type ProviderError } from '@/lib/types/signal-source';
@@ -88,41 +88,52 @@ export async function POST(req: Request) {
         await new Promise((resolve) => setTimeout(resolve, 1200));
         agentOutput = runAgentScan(signals, portfolioSummary);
 
-        // Seed execution state if hedge is recommended and portfolio exposure available
-        if (agentOutput.decision === 'hedge' && agentOutput.hedgeRecommendation && capabilities.portfolioExposure) {
-          const { getExecutionState, setExecutionState } = await import('@/lib/storage/execution-store');
-          const current = await getExecutionState();
+        // Always stage a fresh execution order when agent recommends hedging.
+        // We reset regardless of current phase so each scan produces a fresh ticket.
+        if (agentOutput.decision === 'hedge' && agentOutput.hedgeRecommendation) {
+          const { setExecutionState } = await import('@/lib/storage/execution-store');
+          const nowStr = new Date().toISOString();
 
-          if (current.phase === 'AWAITING_USER_APPROVAL') {
-            const nowStr = new Date().toISOString();
-            const updatedOrder = {
-              id: `ord-live-${Math.random().toString(36).substring(2, 9)}`,
-              pair: agentOutput.hedgeRecommendation.pair,
-              direction: agentOutput.hedgeRecommendation.direction,
-              leverage: agentOutput.hedgeRecommendation.leverage,
-              notionalUsd: agentOutput.hedgeRecommendation.notionalUsd,
-              estimatedPrice: 63400,
-              slippageEstimate: 0.08,
-              status: 'pending-approval' as const,
-              venue: 'SoDEX Testnet',
-              requiresConfirmation: true,
-              timeline: [
-                { step: 1, label: 'Signal Detected', description: `Composite signal score: ${compositeScore}.`, timestamp: nowStr, status: 'complete' as const },
-                { step: 2, label: 'Risk Calculated', description: `Portfolio delta ${netDeltaExposure.toFixed(2)} with net exposure $${totalValueUsd.toLocaleString('en-US')}.`, timestamp: nowStr, status: 'complete' as const },
-                { step: 3, label: 'Hedge Proposed', description: 'Agent recommends 2x short BTC/USDT sized to 35% net exposure.', timestamp: nowStr, status: 'complete' as const },
-                { step: 4, label: 'Awaiting User Approval', description: 'Manual confirmation required before execution.', timestamp: null, status: 'active' as const },
-                { step: 5, label: 'Order Submitted to SoDEX', description: 'Pending approval.', timestamp: null, status: 'pending' as const },
-                { step: 6, label: 'Order Filled', description: 'Pending approval.', timestamp: null, status: 'pending' as const },
-                { step: 7, label: 'Hedge Active', description: 'Portfolio protection updated.', timestamp: null, status: 'pending' as const }
-              ]
-            };
-            await setExecutionState({
-              phase: 'AWAITING_USER_APPROVAL',
-              hedgeOrder: updatedOrder,
-              updatedAt: nowStr,
-              log: [{ phase: 'AWAITING_USER_APPROVAL', timestamp: nowStr, message: 'Awaiting user confirmation to execute portfolio hedge.' }]
-            });
-          }
+          // Use dynamic hedge sizing based on portfolio value and composite score
+          const dynamicNotional = calculateHedgeSize(totalValueUsd, compositeScore, netDeltaExposure);
+          const notionalUsd = dynamicNotional > 0
+            ? dynamicNotional
+            : agentOutput.hedgeRecommendation.notionalUsd;
+
+          // Use live BTC price from SoSoValue snapshot, fall back to default price
+          const liveBtcPrice = getLiveBtcPrice(sosoData.btcSnapshot as Record<string, unknown>);
+          const estimatedPrice = liveBtcPrice > 0
+            ? liveBtcPrice
+            : 63400;
+
+          const hedgeOrder = {
+            id: `ord-live-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            pair: agentOutput.hedgeRecommendation.pair,
+            direction: agentOutput.hedgeRecommendation.direction,
+            leverage: agentOutput.hedgeRecommendation.leverage,
+            notionalUsd,
+            estimatedPrice,
+            slippageEstimate: 0.08,
+            status: 'pending-approval' as const,
+            venue: 'SoDEX Testnet',
+            requiresConfirmation: true,
+            timeline: [
+              { step: 1, label: 'Signal Detected',          description: `Composite signal score: ${compositeScore}. ${signals.filter(s => s.source !== 'unavailable').length} active signals.`, timestamp: nowStr, status: 'complete' as const },
+              { step: 2, label: 'Risk Calculated',          description: `Portfolio delta ${netDeltaExposure.toFixed(2)}, risk score ${riskScore}/100. Notional sized to $${notionalUsd.toLocaleString('en-US')}.`, timestamp: nowStr, status: 'complete' as const },
+              { step: 3, label: 'Hedge Proposed',           description: `Agent recommends ${agentOutput.hedgeRecommendation.leverage}x ${agentOutput.hedgeRecommendation.direction} ${agentOutput.hedgeRecommendation.pair} at ~$${estimatedPrice.toLocaleString()}.`, timestamp: nowStr, status: 'complete' as const },
+              { step: 4, label: 'Awaiting User Approval',   description: 'Manual confirmation required before execution.', timestamp: null, status: 'active' as const },
+              { step: 5, label: 'Order Submitted to SoDEX', description: 'Pending approval.', timestamp: null, status: 'pending' as const },
+              { step: 6, label: 'Order Filled',             description: 'Pending approval.', timestamp: null, status: 'pending' as const },
+              { step: 7, label: 'Hedge Active',             description: 'Portfolio protection updated.', timestamp: null, status: 'pending' as const }
+            ]
+          };
+
+          await setExecutionState({
+            phase: 'AWAITING_USER_APPROVAL',
+            hedgeOrder,
+            updatedAt: nowStr,
+            log: [{ phase: 'AWAITING_USER_APPROVAL', timestamp: nowStr, message: `Hedge order staged — $${notionalUsd.toLocaleString('en-US')} ${agentOutput.hedgeRecommendation.direction} ${agentOutput.hedgeRecommendation.pair}. Awaiting user confirmation.` }]
+          });
         }
       }
     } catch (err) {
