@@ -58,6 +58,8 @@ export async function getOnChainPortfolio(address: string): Promise<PortfolioAss
         valueUsd: ethValueUsd,
         class: 'spot',
         delta: 1.0,
+        volatility30d: 0,
+        riskContribution: 0,
         allocation: 0
       });
       totalValueUsd += ethValueUsd;
@@ -93,6 +95,8 @@ export async function getOnChainPortfolio(address: string): Promise<PortfolioAss
           valueUsd,
           class: token.class,
           delta: token.delta,
+          volatility30d: 0,
+          riskContribution: 0,
           allocation: 0
         });
         totalValueUsd += valueUsd;
