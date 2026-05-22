@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { runAgentScan } from '@/lib/agent/decision-engine';
+import { runGeminiAgentScan } from '@/lib/agent/gemini-client';
 import { fetchMarketSignals } from '@/lib/integrations/sosovalue/client';
 import { fetchPortfolioSummary } from '@/lib/integrations/ssi/client';
 import { getMockSignals } from '@/lib/integrations/sosovalue/mock-client';
@@ -36,7 +36,7 @@ export async function POST() {
   // Artificial delay to mimic scanning/thinking process in UI
   await new Promise((resolve) => setTimeout(resolve, 1800));
 
-  const output = runAgentScan(signals, portfolioSummary);
+  const output = await runGeminiAgentScan(signals, portfolioSummary, []);
   return NextResponse.json(output, { headers: { 'Cache-Control': 'no-store' } });
 }
 

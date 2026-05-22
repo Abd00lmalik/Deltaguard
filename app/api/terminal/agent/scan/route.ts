@@ -16,7 +16,7 @@ import { getSoSoValueData } from '@/lib/integrations/sosovalue/provider';
 import { fetchSSIData } from '@/lib/integrations/ssi/server-client';
 import { normalizeSoSoValueData } from '@/lib/integrations/sosovalue/normalizer';
 import { calculateCompositeScore } from '@/lib/integrations/sosovalue/server-client';
-import { runAgentScan } from '@/lib/agent/decision-engine';
+import { runGeminiAgentScan } from '@/lib/agent/gemini-client';
 import { calculateNetDelta, calculateRiskScore, calculateHedgeSize, getLiveBtcPrice } from '@/lib/risk/delta-engine';
 import { determineAgentMode, getExecutionBlockers, buildRecommendation, type AgentCapabilities } from '@/lib/agent/capabilities';
 import { type PortfolioAsset } from '@/types/portfolio';
@@ -86,7 +86,7 @@ export async function POST(req: Request) {
 
         // Add thinking delay
         await new Promise((resolve) => setTimeout(resolve, 1200));
-        agentOutput = runAgentScan(signals, portfolioSummary);
+        agentOutput = await runGeminiAgentScan(signals, portfolioSummary, sosoData.newsList || []);
 
         // Always stage a fresh execution order when agent recommends hedging.
         // We reset regardless of current phase so each scan produces a fresh ticket.
