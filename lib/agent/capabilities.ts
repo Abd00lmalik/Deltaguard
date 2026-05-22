@@ -34,7 +34,7 @@ export function determineAgentMode(caps: AgentCapabilities): AgentMode {
 export function getExecutionBlockers(caps: AgentCapabilities): string[] {
   const blockers: string[] = [];
   if (!caps.marketIntelligence) blockers.push("SoSoValue market signals unavailable");
-  if (!caps.portfolioExposure)  blockers.push("SSI portfolio exposure not connected");
+  if (!caps.portfolioExposure)  blockers.push("Wallet not connected — connect your wallet on the Portfolio page to enable hedge sizing");
   if (!caps.executionVenue)     blockers.push("SoDEX public market data unavailable");
   if (!caps.signedExecution)    blockers.push("SoDEX signed execution credentials not configured");
   return blockers;

@@ -259,16 +259,21 @@ export default function TerminalPortfolioPage() {
                   ))}
                 </div>
               </GlowCard>
-            ) : (
-               <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40 opacity-70">
+             ) : (
+               <GlowCard className="p-6 border-amber-500/20 bg-amber-500/[0.04]">
                  <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
-                   <AlertTriangle className="h-5 w-5 text-warning" /> SoDEX Account Unlinked
+                   <AlertTriangle className="h-5 w-5 text-amber-400" /> SoDEX Futures Account Not Detected
                  </h3>
-                 <p className="mt-1 font-manrope text-xs text-text-secondary">
-                   This address is not linked to an active SoDEX margin account. Register on SoDEX testnet to enable leverage.
+                 <p className="mt-2 font-manrope text-xs text-text-secondary leading-5">
+                   DeltaGuard could not find an active SoDEX <strong className="text-white">Futures/Perpetuals margin account</strong> for this wallet address.
+                   Your on-chain assets (ETH, USDC) are still shown below and the AI agent can still analyze your portfolio.
+                 </p>
+                 <p className="mt-3 font-manrope text-xs text-amber-400 leading-5">
+                   To enable hedge execution: go to <strong>testnet.sodex.com → Futures tab → deposit USDC as collateral</strong> to open a margin account. Once done, refresh this page.
                  </p>
                </GlowCard>
             )}
+
 
             <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

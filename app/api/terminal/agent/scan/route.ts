@@ -19,6 +19,7 @@ import { calculateCompositeScore } from '@/lib/integrations/sosovalue/server-cli
 import { runGeminiAgentScan } from '@/lib/agent/gemini-client';
 import { calculateNetDelta, calculateRiskScore, calculateHedgeSize, getLiveBtcPrice } from '@/lib/risk/delta-engine';
 import { determineAgentMode, getExecutionBlockers, buildRecommendation, type AgentCapabilities } from '@/lib/agent/capabilities';
+import { getOnChainPortfolio } from '@/lib/wallet/portfolio';
 import { type PortfolioAsset } from '@/types/portfolio';
 import { type ProviderError } from '@/lib/types/signal-source';
 
@@ -41,17 +42,24 @@ export async function POST(req: Request) {
   }
 
   // Run all fetches in parallel — SSI failure must NOT block market signal analysis
-  const [sosoResult, ssiResult] = await Promise.allSettled([
+  // On-chain portfolio is fetched as SSI fallback when wallet address is available
+  const [sosoResult, ssiResult, onChainResult] = await Promise.allSettled([
     getSoSoValueData(),
     fetchSSIData(walletAddress),
+    walletAddress ? getOnChainPortfolio(walletAddress) : Promise.resolve([]),
   ]);
 
-  const sosoData  = sosoResult.status  === 'fulfilled' ? sosoResult.value  : null;
-  const ssiData   = ssiResult.status   === 'fulfilled' ? ssiResult.value   : null;
+  const sosoData      = sosoResult.status      === 'fulfilled' ? sosoResult.value      : null;
+  const ssiData       = ssiResult.status       === 'fulfilled' ? ssiResult.value       : null;
+  const onChainAssets = onChainResult.status   === 'fulfilled' ? onChainResult.value   : [];
+
+  // Portfolio exposure is available if SSI works OR if the user's wallet has on-chain assets
+  const hasOnChainPortfolio = Array.isArray(onChainAssets) && onChainAssets.length > 0;
+  const hasSSIPortfolio = ssiData?.available === true;
 
   const capabilities: AgentCapabilities = {
     marketIntelligence: sosoData?.available === true,
-    portfolioExposure:  ssiData?.available  === true,
+    portfolioExposure:  hasSSIPortfolio || hasOnChainPortfolio,
     executionVenue:     Boolean(process.env.SODEX_BASE_URL),
     signedExecution:    Boolean(process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY),
   };
@@ -71,7 +79,10 @@ export async function POST(req: Request) {
       compositeScore = calculateCompositeScore(signals);
 
       if (compositeScore !== null) {
-        const assets = ssiData?.assets ?? [];
+        // Prefer SSI assets if available, fall back to on-chain wallet assets
+        const assets: PortfolioAsset[] = (ssiData?.assets && ssiData.assets.length > 0)
+          ? ssiData.assets
+          : (onChainAssets as PortfolioAsset[]);
         const totalValueUsd = assets.reduce((sum: number, a: PortfolioAsset) => sum + (a.valueUsd ?? 0), 0);
         const netDeltaExposure = assets.length > 0 ? calculateNetDelta(assets) : 0;
         const riskScore = calculateRiskScore(signals, netDeltaExposure);

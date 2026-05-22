@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSodexAccountState } from '@/lib/providers/live-provider';
+import { getOnChainPortfolio } from '@/lib/wallet/portfolio';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -17,31 +18,29 @@ export async function GET(request: Request) {
     );
   }
 
-  try {
-    let sodexAccountState = null;
-    
-    try {
-      sodexAccountState = await getSodexAccountState(address);
-    } catch (e) {
-      console.warn('[DeltaGuard] SoDEX account state unavailable for address:', address, e);
-    }
+  // Run both fetches in parallel — SoDEX failure must NOT block on-chain assets
+  const [sodexResult, assetsResult] = await Promise.allSettled([
+    getSodexAccountState(address),
+    getOnChainPortfolio(address),
+  ]);
 
-    return NextResponse.json({
-      sodexAccountState,
-      address,
-      source: 'live',
-      fetchedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    console.error('[DeltaGuard] Failed to fetch SoDEX state:', error);
-    const errorMessage = error instanceof Error ? error.message : 'SoDEX fetch failed';
-    return NextResponse.json(
-      {
-        error: errorMessage,
-        code: 'SODEX_FETCH_FAILED',
-      },
-      { status: 502 }
-    );
+  const sodexAccountState = sodexResult.status === 'fulfilled' ? sodexResult.value : null;
+  const assets = assetsResult.status === 'fulfilled' ? assetsResult.value : [];
+
+  if (sodexResult.status === 'rejected') {
+    console.warn('[DeltaGuard] SoDEX account state unavailable for address:', address, sodexResult.reason);
   }
+  if (assetsResult.status === 'rejected') {
+    console.warn('[DeltaGuard] On-chain portfolio unavailable for address:', address, assetsResult.reason);
+  }
+
+  return NextResponse.json({
+    sodexAccountState,
+    assets,
+    address,
+    source: 'live',
+    fetchedAt: new Date().toISOString(),
+  });
 }
+
 export const dynamic = 'force-dynamic';
