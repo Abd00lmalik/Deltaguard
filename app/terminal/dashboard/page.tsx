@@ -19,19 +19,19 @@ import { staggerContainer, staggerItem, slideInRight } from '@/lib/utils/motion'
 import type { AgentReasoningOutput } from '@/types/agent';
 
 const loadingMessages = [
-  'Connecting to SoSoValue API...',
-  'Fetching live market signals...',
-  'Calculating live portfolio delta...',
-  'Running agent decision engine...',
+  'Fetching live ETH price...',
+  'Reading on-chain balances...',
+  'Fetching SoSoValue market signals...',
+  'Running deterministic risk engine...',
   'Generating hedge recommendation...'
 ];
 
 interface ScanError { error: string; code?: string; setup?: string }
 
-interface AssetData {
-  valueUsd: number;
-  class: string;
-  delta: number;
+interface PortfolioApiResponse {
+  assets?: { valueUsd: number; class: string; delta: number }[];
+  totalValueUsd?: number;
+  netDelta?: number;
 }
 
 export default function TerminalDashboardPage() {
@@ -41,20 +41,27 @@ export default function TerminalDashboardPage() {
   const [activeMessage, setActiveMessage] = useState(0);
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
   const [netDelta, setNetDelta] = useState<number | null>(null);
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
 
+  // Load wallet address and pre-fetch portfolio value when page mounts
   useEffect(() => {
-    // Read the connected wallet address from localStorage (set during MetaMask connection)
-    const storedAddr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
-    if (!storedAddr) return; // Don't fetch if no wallet connected yet
+    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
+    setWalletAddress(addr);
+    if (!addr) return;
 
-    fetch(`/api/terminal/portfolio?address=${encodeURIComponent(storedAddr)}`)
+    fetch(`/api/terminal/portfolio?address=${encodeURIComponent(addr)}`)
       .then((r) => r.json())
-      .then((data: { assets?: AssetData[] }) => {
-        if (data?.assets) {
-          const total = data.assets.reduce((s: number, a: AssetData) => s + a.valueUsd, 0);
-          const directional = data.assets.filter((a: AssetData) => a.class !== 'stablecoin');
-          const totalDir = directional.reduce((s: number, a: AssetData) => s + a.valueUsd, 0);
-          const wDelta = directional.reduce((s: number, a: AssetData) => s + a.delta * a.valueUsd, 0);
+      .then((data: PortfolioApiResponse) => {
+        // Use server-computed totals if available (faster, consistent)
+        if (data.totalValueUsd != null) {
+          setPortfolioValue(data.totalValueUsd);
+          setNetDelta(data.netDelta ?? 0);
+        } else if (data.assets) {
+          // Fallback: compute client-side
+          const total = data.assets.reduce((s, a) => s + a.valueUsd, 0);
+          const directional = data.assets.filter((a) => a.class !== 'stablecoin');
+          const totalDir = directional.reduce((s, a) => s + a.valueUsd, 0);
+          const wDelta = directional.reduce((s, a) => s + a.delta * a.valueUsd, 0);
           setPortfolioValue(total);
           setNetDelta(totalDir > 0 ? wDelta / totalDir : 0);
         }
@@ -72,9 +79,9 @@ export default function TerminalDashboardPage() {
 
   async function runScan() {
     const isConnected = typeof window !== 'undefined' && localStorage.getItem('dg_wallet_connected') === 'true';
-    const walletAddr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') || '' : '';
+    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') || '' : '';
 
-    if (!isConnected || !walletAddr) {
+    if (!isConnected || !addr) {
       setScanError({
         error: 'Web3 wallet connection required. Please connect your wallet on the Portfolio page to enable scans.',
         code: 'CONNECTION_REQUIRED'
@@ -90,7 +97,7 @@ export default function TerminalDashboardPage() {
       const response = await fetch('/api/terminal/agent/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress: walletAddr })
+        body: JSON.stringify({ walletAddress: addr })
       });
       const data = await response.json();
       if (!response.ok) {
@@ -99,6 +106,12 @@ export default function TerminalDashboardPage() {
         return;
       }
       setAgentOutput(data as AgentReasoningOutput);
+
+      // Update portfolio values from scan result if they came back
+      const scanData = data as { totalValueUsd?: number; portfolioDelta?: number };
+      if (scanData.totalValueUsd != null) setPortfolioValue(scanData.totalValueUsd);
+      if (scanData.portfolioDelta != null) setNetDelta(scanData.portfolioDelta);
+
       setScanState('complete');
     } catch {
       setScanError({ error: 'Network error — could not reach scan endpoint.' });
@@ -110,13 +123,17 @@ export default function TerminalDashboardPage() {
     {
       label: 'Portfolio Value',
       value: portfolioValue != null ? formatCurrency(portfolioValue) : '—',
-      subtext: portfolioValue != null ? 'Live SSI Portfolio' : 'Awaiting live data',
+      subtext: portfolioValue != null ? 'Live On-Chain Portfolio' : 'Connect wallet to fetch',
       trend: 'up' as const
     },
     {
       label: 'Net Delta Exposure',
       value: netDelta != null ? netDelta.toFixed(2) : '—',
-      subtext: netDelta != null ? 'Live delta' : 'Awaiting live data',
+      subtext: netDelta != null
+        ? netDelta > 0.7 ? 'Highly directional — hedge advised'
+          : netDelta > 0.3 ? 'Moderate exposure'
+          : 'Low directional risk'
+        : 'Connect wallet to fetch',
       highlight: 'danger' as const
     },
     {
@@ -193,17 +210,19 @@ export default function TerminalDashboardPage() {
         ) : scanState === 'idle' ? (
           <EmptyState
             title="Live Terminal Ready"
-            description="Click Run Live Scan to connect to SoSoValue, fetch live market signals, and run the agent decision engine."
+            description="Click Run Live Scan to fetch live market signals from SoSoValue, read your on-chain portfolio, and run the AI decision engine."
             action={<PillButton onClick={runScan}>Run Live Scan</PillButton>}
           />
         ) : (
           <>
             <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-              <PortfolioOverview />
+              {/* Real portfolio history chart — walletAddress scopes it to this user */}
+              <PortfolioOverview walletAddress={walletAddress} />
               <RiskScoreGauge score={agentOutput ? Math.round(Math.abs(agentOutput.compositeScore) * 0.8) : 0} label="LIVE RISK" />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              {/* Live signals overview — no mock data */}
               <SignalOverview />
               <motion.div initial="hidden" animate="visible" variants={slideInRight} transition={{ delay: 0.3 }}>
                 <HedgeProposalCard output={agentOutput} />

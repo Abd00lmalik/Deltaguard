@@ -2,24 +2,47 @@
  * TERMINAL ROUTE — LIVE DATA ONLY
  * Returns real external API data or honest error states.
  * Does not fall back to mock data silently.
- *
- * AUDIT FINDINGS:
- * - Previous signals route hardcoded `source: 'live'` regardless of whether API calls succeeded.
- * - It also duplicated fetching — the health route ran its own independent fetch, so both
- *   could disagree (one caching a failed state, the other re-fetching and succeeding).
- * - Fix: both this route and the health route now call getSoSoValueData() which shares a 30s cache.
- * - The returned `metadata.source` tells the UI exactly what kind of data it received.
+ * 
+ * Intelligence sources (all parallel):
+ *   - SoSoValue: ETF flows, index snapshots, news regime
+ *   - Binance Premium Index: BTC/ETH perpetual funding rates
+ *   - Deribit: DVOL implied volatility index + options put/call skew
+ *   - Hyperliquid: Orderbook bid/ask imbalance + OI-weighted funding
  */
 
 import { NextResponse } from 'next/server';
 import { getSoSoValueData } from '@/lib/integrations/sosovalue/provider';
 import { normalizeSoSoValueData } from '@/lib/integrations/sosovalue/normalizer';
 import { calculateCompositeScore } from '@/lib/integrations/sosovalue/server-client';
+import { fetchBtcEthFundingRates } from '@/lib/integrations/coinglass/client';
+import { fetchDeribitIntelligence } from '@/lib/integrations/deribit/client';
+import { fetchHyperliquidIntelligence } from '@/lib/integrations/hyperliquid/client';
+import { parseRiskProfile } from '@/lib/config/signal-weights';
+import { withTelemetry } from '@/lib/telemetry/middleware';
 import type { SignalMetadata } from '@/lib/types/signal-source';
 import type { MarketSignal } from '@/types/signals';
 
-export async function GET() {
-  const sosoData = await getSoSoValueData();
+async function handler(request: Request) {
+  const riskProfile = parseRiskProfile(
+    new URL(request.url).searchParams.get('profile') ??
+    request.headers.get('x-risk-profile')
+  );
+
+  const [sosoData, fundingRates, deribitData, hyperliquidData] = await Promise.all([
+    getSoSoValueData(),
+    fetchBtcEthFundingRates().catch((err) => {
+      console.warn('Failed to fetch funding rates in signals api:', err);
+      return undefined;
+    }),
+    fetchDeribitIntelligence().catch((err) => {
+      console.warn('Failed to fetch Deribit intelligence:', err);
+      return undefined;
+    }),
+    fetchHyperliquidIntelligence().catch((err) => {
+      console.warn('Failed to fetch Hyperliquid intelligence:', err);
+      return undefined;
+    }),
+  ]);
 
   if (!sosoData.available && sosoData.providerHealth === 'setup_required') {
     return NextResponse.json(
@@ -39,26 +62,38 @@ export async function GET() {
     );
   }
 
-  const signals = normalizeSoSoValueData(sosoData, null);
-  const compositeScore = calculateCompositeScore(signals);
+  const signals = normalizeSoSoValueData(
+    sosoData,
+    null,
+    fundingRates || undefined,
+    deribitData || undefined,
+    hyperliquidData || undefined,
+    riskProfile
+  );
+  const compositeScore = calculateCompositeScore(signals, riskProfile);
 
   const unavailableCount = signals.filter((s: MarketSignal) => s.source === 'unavailable' || s.value === null).length;
   const availableCount = signals.length - unavailableCount;
 
+  // Build data sources list
+  const dataSourcesUsed: string[] = [
+    sosoData.newsList?.length > 0 ? 'SoSoValue /news' : null,
+    sosoData.indexSnapshot && Object.keys(sosoData.indexSnapshot).length > 0 ? 'SoSoValue /indices/ssimag7/market-snapshot' : null,
+    sosoData.btcSnapshot && Object.keys(sosoData.btcSnapshot).length > 0 ? 'SoSoValue BTC snapshot' : null,
+    fundingRates ? 'Binance Premium Index (BTC/ETH perp funding)' : null,
+    deribitData?.source === 'live' ? `Deribit DVOL (BTC: ${deribitData.btcVol?.dvolIndex}, ETH: ${deribitData.ethVol?.dvolIndex})` : null,
+    hyperliquidData?.source === 'live' ? `Hyperliquid orderbook (BTC imbalance: ${hyperliquidData.btcOrderbook?.imbalanceRatio?.toFixed(3)})` : null,
+  ].filter(Boolean) as string[];
+
   const metadata: SignalMetadata = {
     source: sosoData.source,
     providerHealth: sosoData.providerHealth,
-    dataSourcesUsed: [
-      sosoData.newsList?.length > 0 ? 'SoSoValue /news' : null,
-      sosoData.indexSnapshot && Object.keys(sosoData.indexSnapshot).length > 0 ? 'SoSoValue /indices/ssimag7/market-snapshot' : null,
-      sosoData.btcSnapshot && Object.keys(sosoData.btcSnapshot).length > 0 ? 'SoSoValue /currencies/1673723677362319866/market-snapshot' : null,
-    ].filter(Boolean) as string[],
+    dataSourcesUsed,
     lastUpdated: sosoData.lastUpdated,
     errors: sosoData.errors,
     ...(sosoData.source === 'cached' ? { cacheAgeSeconds: sosoData.cacheAgeSeconds } : {}),
   };
 
-  // If SoSoValue totally unavailable and still no signals, return descriptive error
   if (!sosoData.available) {
     return NextResponse.json(
       {
@@ -72,7 +107,6 @@ export async function GET() {
     );
   }
 
-  // Build composite score info
   let compositeLabel = 'UNAVAILABLE';
   let compositeRegime: 'risk-off' | 'caution' | 'neutral' | 'risk-on' = 'neutral';
   if (compositeScore !== null) {
@@ -90,6 +124,23 @@ export async function GET() {
       lastUpdated: sosoData.lastUpdated,
     },
     metadata,
+    intelligence: {
+      deribit: {
+        btcDvol: deribitData?.btcVol ?? null,
+        ethDvol: deribitData?.ethVol ?? null,
+        btcSkew: deribitData?.btcSkew ?? null,
+        ethSkew: deribitData?.ethSkew ?? null,
+        source: deribitData?.source ?? 'unavailable',
+      },
+      hyperliquid: {
+        btcFunding: hyperliquidData?.btcFunding ?? null,
+        ethFunding: hyperliquidData?.ethFunding ?? null,
+        btcOrderbook: hyperliquidData?.btcOrderbook ?? null,
+        ethOrderbook: hyperliquidData?.ethOrderbook ?? null,
+        source: hyperliquidData?.source ?? 'unavailable',
+      },
+      riskProfile,
+    },
     summary: {
       total: signals.length,
       available: availableCount,
@@ -99,4 +150,5 @@ export async function GET() {
   });
 }
 
+export const GET = withTelemetry('/api/terminal/signals', handler);
 export const dynamic = 'force-dynamic';

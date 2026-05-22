@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, GitBranch, RefreshCw, Wallet, Coins, FileSignature, Search, ShieldAlert, ArrowUpRight } from 'lucide-react';
+import { AlertTriangle, GitBranch, RefreshCw, Wallet, Coins, FileSignature, Search, ArrowUpRight, FlaskConical } from 'lucide-react';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Topbar } from '@/components/layout/Topbar';
 import { AllocationChart } from '@/components/portfolio/AllocationChart';
 import { ExposureChart } from '@/components/portfolio/ExposureChart';
@@ -12,6 +13,7 @@ import { SectionLabel } from '@/components/ui/SectionLabel';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { IntegrationStatusCard } from '@/components/integrations/IntegrationStatusCard';
 import { useWalletPortfolio } from '@/hooks/useWalletPortfolio';
+import { useNetwork } from '@/lib/store/network-context';
 
 export default function TerminalPortfolioPage() {
   const {
@@ -23,22 +25,16 @@ export default function TerminalPortfolioPage() {
     loadingHoldings,
     error,
     loadPortfolio,
-    connectWallet,
     handleWatchAddressSubmit,
     disconnectWallet,
     setError
   } = useWalletPortfolio();
+  const { isTestnet, networkLabel, toggleNetwork } = useNetwork();
 
-  const [connecting, setConnecting] = useState(false);
-  const [walletError, setWalletError] = useState<string | null>(null);
   const [watchAddressInput, setWatchAddressInput] = useState('');
   
   const [signing, setSigning] = useState(false);
   const [signedPayload, setSignedPayload] = useState<string | null>(null);
-
-  async function handleUseEnvFallback() {
-    await loadPortfolio(undefined, 'env');
-  }
 
   async function signExecutionPayload() {
     if (addressSource !== 'wallet') {
@@ -129,21 +125,9 @@ export default function TerminalPortfolioPage() {
                 To retrieve live on-chain holdings and check SoDEX account state, please connect using one of the secure options below.
               </p>
 
-              {walletError && (
-                <div className="mt-4 p-4 rounded-xl bg-danger-dim border border-danger/25 text-left flex gap-3">
-                  <ShieldAlert className="h-5 w-5 shrink-0 text-danger" />
-                  <p className="font-manrope text-xs text-text-secondary">{walletError}</p>
-                </div>
-              )}
-
+              {/* RainbowKit handles MetaMask, Rabby, Coinbase Wallet, WalletConnect natively */}
               <div className="mt-6 flex flex-wrap justify-center gap-4">
-                <PillButton onClick={() => connectWallet(setConnecting, setWalletError)} loading={connecting}>
-                  Connect Web3 Wallet (MetaMask/Rabby)
-                </PillButton>
-                
-                <PillButton variant="secondary" onClick={handleUseEnvFallback}>
-                  Use Admin Environment Fallback
-                </PillButton>
+                <ConnectButton label="Connect Wallet" />
               </div>
             </GlowCard>
 
@@ -210,8 +194,15 @@ export default function TerminalPortfolioPage() {
                     </h4>
                     <p className="mt-1 font-mono text-xs text-text-secondary truncate">{walletAddress}</p>
                     <div className="mt-4 flex gap-2">
-                      <StatusBadge variant="safe" label="Active Network: Sepolia" />
-                      <StatusBadge variant="muted" label={addressSource || 'unknown'} />
+                      <StatusBadge variant={isTestnet ? 'warning' : 'safe'} label={`Network: ${networkLabel}`} />
+                    <StatusBadge variant="muted" label={addressSource || 'unknown'} />
+                    <button
+                      onClick={toggleNetwork}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 font-manrope text-[10px] font-bold uppercase tracking-wider text-text-muted hover:bg-white/[0.10] hover:text-white transition-colors"
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      {isTestnet ? 'Switch to Mainnet' : 'Switch to Testnet'}
+                    </button>
                     </div>
                   </div>
                 </div>
@@ -362,7 +353,7 @@ export default function TerminalPortfolioPage() {
           name="EVM On-Chain RPC"
           icon={GitBranch}
           statusBadge={walletConnected && assets ? 'ACTIVE' : 'OFFLINE'}
-          description="Provides live ERC20 token balances and native ETH directly from public RPC nodes on the Sepolia testnet."
+          description={`Provides live ERC20 token balances and native ETH via ${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? 'Alchemy Token API (auto-discovery enabled)' : 'public RPC (static token list)'} on ${networkLabel}.`}
         />
       </div>
     </>

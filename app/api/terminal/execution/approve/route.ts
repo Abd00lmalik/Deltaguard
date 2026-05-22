@@ -36,7 +36,13 @@ export async function POST(request: Request) {
   // Move to ORDER_PREPARING
   await setExecutionState({ ...current, phase: 'ORDER_PREPARING', updatedAt: new Date().toISOString() }, address);
 
-  if (!readiness.sodexSigned) {
+  const headerApiKey = request.headers.get('x-sodex-api-key') || undefined;
+  const headerApiPrivateKey = request.headers.get('x-sodex-api-private-key') || undefined;
+
+  const hasCustomCredentials = !!headerApiKey && !!headerApiPrivateKey;
+  const isReadyForExecution = readiness.sodexSigned || hasCustomCredentials;
+
+  if (!isReadyForExecution) {
     // Stop here — signed execution credentials not available
     const stoppedState = {
       ...current,
@@ -47,7 +53,7 @@ export async function POST(request: Request) {
         {
           phase: 'ORDER_PREPARING' as const,
           timestamp: new Date().toISOString(),
-          message: 'Order prepared. Signed execution requires SODEX_API_KEY and SODEX_API_PRIVATE_KEY to be configured in Vercel.',
+          message: 'Order prepared. Signed execution requires SODEX_API_KEY and SODEX_API_PRIVATE_KEY to be configured in Vercel or Settings.',
         },
       ],
     };
@@ -56,7 +62,7 @@ export async function POST(request: Request) {
       state: stoppedState,
       executionStopped: true,
       reason: 'SIGNED_EXECUTION_NOT_CONFIGURED',
-      message: 'Order has been prepared and approved. Signed testnet execution requires additional setup.',
+      message: 'Order has been prepared and approved. Signed testnet execution requires additional setup or user credentials in Settings.',
       setupRequired: ['SODEX_API_KEY', 'SODEX_API_PRIVATE_KEY'],
     });
   }
@@ -64,7 +70,7 @@ export async function POST(request: Request) {
   // Fetch dynamic SoDEX account state first
   let accountId: number;
   try {
-    const sodexState = await getSodexAccountState(address);
+    const sodexState = await getSodexAccountState(address, { apiKey: headerApiKey });
     if (!sodexState) {
       throw new Error('No active SoDEX margin account found.');
     }
@@ -93,7 +99,10 @@ export async function POST(request: Request) {
 
   // Attempt real SoDEX testnet order
   try {
-    const orderResult = await submitOrder(current.hedgeOrder, accountId);
+    const orderResult = await submitOrder(current.hedgeOrder, accountId, {
+      apiKey: headerApiKey,
+      apiPrivateKey: headerApiPrivateKey
+    });
 
     if (!orderResult) {
       const failedState = {

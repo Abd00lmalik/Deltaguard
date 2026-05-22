@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Manrope, Sora } from 'next/font/google';
 import './globals.css';
 import { AppShell } from '@/components/layout/AppShell';
+import { Web3Provider } from '@/components/providers/Web3Provider';
 
 const sora = Sora({ subsets: ['latin'], variable: '--font-sora' });
 const manrope = Manrope({ subsets: ['latin'], variable: '--font-manrope' });
@@ -15,7 +16,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" className={`${sora.variable} ${manrope.variable}`}>
       <body>
-        <AppShell>{children}</AppShell>
+        <Web3Provider>
+          <AppShell>{children}</AppShell>
+        </Web3Provider>
       </body>
     </html>
   );

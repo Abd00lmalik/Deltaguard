@@ -120,7 +120,7 @@ export default function DemoDashboardPage() {
         ) : (
           <>
             <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
-              <PortfolioOverview />
+              <PortfolioOverview walletAddress={null} />
               <RiskScoreGauge score={MOCK_PORTFOLIO_SUMMARY.riskScore} label="HIGH RISK" />
             </div>
 

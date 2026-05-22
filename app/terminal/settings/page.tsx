@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, Lock, Minus, PauseCircle, Plus } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { GlowCard } from '@/components/ui/GlowCard';
@@ -20,11 +20,43 @@ export default function TerminalSettingsPage() {
     hedgeThreshold: -50,
     watchThreshold: 20
   });
+  const [sodexApiKey, setSodexApiKey] = useState('');
+  const [sodexApiPrivateKey, setSodexApiPrivateKey] = useState('');
   const [emergencyPaused, setEmergencyPaused] = useState(false);
   const [showPauseConfirm, setShowPauseConfirm] = useState(false);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setSodexApiKey(localStorage.getItem('dg_sodex_api_key') || '');
+      setSodexApiPrivateKey(localStorage.getItem('dg_sodex_api_private_key') || '');
+      const savedSettings = localStorage.getItem('dg_agent_settings');
+      if (savedSettings) {
+        try {
+          setSettings(JSON.parse(savedSettings));
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  }, []);
+
+  function saveSodexCredentials(key: string, secret: string) {
+    setSodexApiKey(key);
+    setSodexApiPrivateKey(secret);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dg_sodex_api_key', key);
+      localStorage.setItem('dg_sodex_api_private_key', secret);
+    }
+  }
+
   function updateSetting<K extends keyof typeof settings>(key: K, value: (typeof settings)[K]) {
-    setSettings((current) => ({ ...current, [key]: value }));
+    setSettings((current) => {
+      const next = { ...current, [key]: value };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('dg_agent_settings', JSON.stringify(next));
+      }
+      return next;
+    });
   }
 
   return (
@@ -148,6 +180,38 @@ export default function TerminalSettingsPage() {
                 <option>SoDEX Testnet</option>
               </select>
             </label>
+          </div>
+        </GlowCard>
+
+        <GlowCard className="p-5">
+          <div className="flex items-center gap-3">
+            <Lock className="h-5 w-5 text-accent-lime" />
+            <h2 className="font-sora text-base font-bold text-white">SoDEX Execution Credentials</h2>
+          </div>
+          <p className="mt-2 font-manrope text-xs text-text-secondary leading-5">
+            Configure your personal SoDEX API Key and API Private Key. These are stored locally in your browser and used only to authorize and sign transactions sent to the SoDEX testnet.
+          </p>
+          <div className="mt-5 grid gap-5 md:grid-cols-2">
+            <div>
+              <label className="font-manrope text-sm font-bold text-white">SoDEX API Key</label>
+              <input
+                type="text"
+                placeholder="e.g. api-key-01"
+                value={sodexApiKey}
+                onChange={(e) => saveSodexCredentials(e.target.value, sodexApiPrivateKey)}
+                className="mt-2 h-11 w-full rounded-xl border border-border-subtle bg-surface-2 px-4 font-mono text-white outline-none focus:border-border-active"
+              />
+            </div>
+            <div>
+              <label className="font-manrope text-sm font-bold text-white">SoDEX API Private Key (Hex String)</label>
+              <input
+                type="password"
+                placeholder="0x..."
+                value={sodexApiPrivateKey}
+                onChange={(e) => saveSodexCredentials(sodexApiKey, e.target.value)}
+                className="mt-2 h-11 w-full rounded-xl border border-border-subtle bg-surface-2 px-4 font-mono text-white outline-none focus:border-border-active"
+              />
+            </div>
           </div>
         </GlowCard>
 

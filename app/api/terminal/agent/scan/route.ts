@@ -16,6 +16,7 @@ import { getSoSoValueData } from '@/lib/integrations/sosovalue/provider';
 import { fetchSSIData } from '@/lib/integrations/ssi/server-client';
 import { normalizeSoSoValueData } from '@/lib/integrations/sosovalue/normalizer';
 import { calculateCompositeScore } from '@/lib/integrations/sosovalue/server-client';
+import { fetchBtcEthFundingRates } from '@/lib/integrations/coinglass/client';
 import { runGeminiAgentScan } from '@/lib/agent/gemini-client';
 import { calculateNetDelta, calculateRiskScore, calculateHedgeSize, getLiveBtcPrice } from '@/lib/risk/delta-engine';
 import { determineAgentMode, getExecutionBlockers, buildRecommendation, type AgentCapabilities } from '@/lib/agent/capabilities';
@@ -43,15 +44,17 @@ export async function POST(req: Request) {
 
   // Run all fetches in parallel — SSI failure must NOT block market signal analysis
   // On-chain portfolio is fetched as SSI fallback when wallet address is available
-  const [sosoResult, ssiResult, onChainResult] = await Promise.allSettled([
+  const [sosoResult, ssiResult, onChainResult, fundingRatesResult] = await Promise.allSettled([
     getSoSoValueData(),
     fetchSSIData(walletAddress),
     walletAddress ? getOnChainPortfolio(walletAddress) : Promise.resolve([]),
+    fetchBtcEthFundingRates(),
   ]);
 
   const sosoData      = sosoResult.status      === 'fulfilled' ? sosoResult.value      : null;
   const ssiData       = ssiResult.status       === 'fulfilled' ? ssiResult.value       : null;
   const onChainAssets = onChainResult.status   === 'fulfilled' ? onChainResult.value   : [];
+  const fundingRates  = fundingRatesResult.status === 'fulfilled' ? fundingRatesResult.value : undefined;
 
   // Portfolio exposure is available if SSI works OR if the user's wallet has on-chain assets
   const hasOnChainPortfolio = Array.isArray(onChainAssets) && onChainAssets.length > 0;
@@ -75,7 +78,7 @@ export async function POST(req: Request) {
 
   if (capabilities.marketIntelligence && sosoData) {
     try {
-      signals = normalizeSoSoValueData(sosoData, ssiData ?? null);
+      signals = normalizeSoSoValueData(sosoData, ssiData ?? null, fundingRates);
       compositeScore = calculateCompositeScore(signals);
 
       if (compositeScore !== null) {

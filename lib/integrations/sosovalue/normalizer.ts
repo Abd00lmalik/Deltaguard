@@ -15,6 +15,11 @@ import type { MarketSignal, SignalCategory, SignalSeverity } from '@/types/signa
 import type { SignalSource } from '@/lib/types/signal-source';
 import { SIGNAL_INTEGRITY_MAP, SIGNAL_DISPLAY_NAMES, type SSIData } from './signal-audit';
 import type { SoSoValueFetchResult, NewsItem } from './provider';
+import type { FundingRateData } from '@/lib/integrations/coinglass/client';
+import type { DeribitIntelligence } from '@/lib/integrations/deribit/client';
+import type { HyperliquidIntelligence } from '@/lib/integrations/hyperliquid/client';
+import type { RiskProfile } from '@/lib/config/signal-weights';
+import { getSignalWeight } from '@/lib/config/signal-weights';
 
 function getSeverity(score: number): SignalSeverity {
   if (score <= -75) return 'critical';
@@ -32,7 +37,11 @@ function getDirection(score: number): 'bullish' | 'bearish' | 'neutral' {
 
 export function normalizeSoSoValueData(
   sosoResult: SoSoValueFetchResult,
-  ssiData: SSIData | null
+  ssiData: SSIData | null,
+  fundingRates?: Record<string, FundingRateData>,
+  deribitData?: DeribitIntelligence,
+  hyperliquidData?: HyperliquidIntelligence,
+  riskProfile: RiskProfile = 'balanced'
 ): MarketSignal[] {
   const now = new Date();
   
@@ -81,8 +90,26 @@ export function normalizeSoSoValueData(
     ? `Yield curves and macroeconomic indicators are exerting negative pressure. ${hasMacroNews ? 'Recent central bank/macro news confirms hawkish sentiment.' : 'General macro environment remains restrictive.'}`
     : 'Macroeconomic indicators are supportive, with treasury yields stable and positive risk asset appetite.';
 
-  const volScore = -Math.min(100, Math.round(Math.abs(btcChange) * 20));
-  const volExplanation = `Realized volatility is high. BTC 24h change magnitude is ${Math.abs(btcChange).toFixed(2)}%, driving options implied volatility skew to the ${btcChange < 0 ? 'downside (put demand)' : 'upside (call demand)'}.`;
+  // btcVolatility: prefer real Deribit DVOL if available
+  let volScore: number;
+  let volExplanation: string;
+  let volSource: 'deribit-dvol' | 'derived' = 'derived';
+
+  if (deribitData?.btcVol && deribitData.source === 'live') {
+    const dvol = deribitData.btcVol.dvolIndex;
+    const dvolChange = deribitData.btcVol.dvolChange24h;
+    // DVOL above 60 = high risk, below 40 = low risk. Normalize to -100 to 100
+    volScore = -Math.round(Math.max(-100, Math.min(100, (dvol - 50) * 2.5)));
+    volSource = 'deribit-dvol';
+    volExplanation = `BTC Deribit DVOL implied volatility index: ${dvol}% (${dvolChange >= 0 ? '+' : ''}${dvolChange.toFixed(2)} pts 24h). ${
+      dvol > 75 ? 'CRITICAL: Extremely elevated IV signals market stress and tail-risk hedging demand.' :
+      dvol > 60 ? 'HIGH: Elevated implied volatility suggests options markets are pricing in a large near-term move.' :
+      dvol > 45 ? 'MEDIUM: Moderate volatility regime with directional uncertainty.' :
+      'LOW: Compressed volatility. Options are cheap. Complacency risk.'}`;
+  } else {
+    volScore = -Math.min(100, Math.round(Math.abs(btcChange) * 20));
+    volExplanation = `Realized volatility is high. BTC 24h change magnitude is ${Math.abs(btcChange).toFixed(2)}%, driving options implied volatility skew to the ${btcChange < 0 ? 'downside (put demand)' : 'upside (call demand)'}.`;
+  }
 
   const stableScore = Math.max(-100, Math.min(100, Math.round(-30 + indexChange * 10)));
   const stableExplanation = stableScore < 0
@@ -100,10 +127,31 @@ export function normalizeSoSoValueData(
   else if (negCount > posCount) sentimentScore = Math.max(-100, sentimentScore - 20);
   const sentimentExplanation = `Aggregated news sentiment index is ${sentimentScore < -40 ? 'Fearful' : sentimentScore > 20 ? 'Greedy/Bullish' : 'Neutral'}. Keyword analysis from ${(newsList || []).length} articles indicates ${posCount} bullish vs ${negCount} bearish indicators.`;
 
-  const fundingScore = Math.max(-100, Math.min(100, Math.round(btcChange * 18)));
-  const fundingExplanation = fundingScore < 0
+  let fundingScore = Math.max(-100, Math.min(100, Math.round(btcChange * 18)));
+  let fundingExplanation = fundingScore < 0
     ? 'Perpetual funding rates are compressed or negative, showing short hedging dominance on major venues.'
     : 'Perpetual funding rates are positive, indicating normal leveraged long demand.';
+
+  if (fundingRates) {
+    const btcRate = fundingRates['BTCUSDT']?.fundingRate ?? 0.0001;
+    const ethRate = fundingRates['ETHUSDT']?.fundingRate ?? 0.00008;
+    const avgRate = (btcRate + ethRate) / 2;
+    
+    fundingScore = Math.max(-100, Math.min(100, Math.round((avgRate - 0.00005) * 500000)));
+    
+    const btcPct = (btcRate * 100).toFixed(4);
+    const ethPct = (ethRate * 100).toFixed(4);
+    
+    if (avgRate < 0) {
+      fundingExplanation = `Perpetual funding rates are negative (BTC: ${btcPct}%, ETH: ${ethPct}%), showing strong short hedging dominance and risk-off positioning.`;
+    } else if (avgRate < 0.00005) {
+      fundingExplanation = `Perpetual funding rates are compressed near zero (BTC: ${btcPct}%, ETH: ${ethPct}%), indicating a leverage flush and cautious sentiment.`;
+    } else if (avgRate < 0.0002) {
+      fundingExplanation = `Perpetual funding rates are stable (BTC: ${btcPct}%, ETH: ${ethPct}%), indicating balanced leverage and normal spot-futures basis.`;
+    } else {
+      fundingExplanation = `Perpetual funding rates are highly elevated (BTC: ${btcPct}%, ETH: ${ethPct}%), signaling excessive long leverage and potential volatility squeeze risk.`;
+    }
+  }
 
   const onchainScore = Math.max(-100, Math.min(100, Math.round(-25 + btcChange * 8)));
   const onchainExplanation = onchainScore < 0
@@ -123,13 +171,41 @@ export function normalizeSoSoValueData(
     ? `Latest Headline: "${newsTitle}". Matched currencies: ${latestNews.matched_currencies?.map((c) => c.name).join(', ') || 'None'}. Tags: ${latestNews.tags?.join(', ') || 'None'}.`
     : 'No recent news articles detected. System using baseline macro-regulatory policy parameters.';
 
+  // Options Skew signal from Deribit (new signal)
+  let optionsSkewScore = 0;
+  let optionsSkewExplanation = 'Options put/call skew data not available.';
+  let optionsSkewSource: SignalSource = 'unavailable';
+  if (deribitData?.btcSkew && deribitData.source === 'live') {
+    const skew = deribitData.btcSkew.putCallSkew;
+    // Positive skew = puts more expensive = bearish demand = negative signal
+    optionsSkewScore = Math.max(-100, Math.min(100, Math.round(-skew * 3)));
+    optionsSkewSource = 'live';
+    optionsSkewExplanation = `BTC 25-delta options put/call IV skew: ${skew > 0 ? '+' : ''}${skew.toFixed(2)} pts. ${deribitData.btcSkew.skewLabel}. ${
+      skew > 10 ? 'Heavy put demand indicates institutional downside hedging is active.' :
+      skew < -10 ? 'Call skew suggests bullish options flow and speculative demand.' :
+      'Neutral options skew. Market not pricing strong directional bias.'}`;
+  }
+
+  // Orderbook Imbalance signal from Hyperliquid (new signal)
+  let obImbalanceScore = 0;
+  let obImbalanceExplanation = 'Orderbook imbalance data not available.';
+  let obImbalanceSource: SignalSource = 'unavailable';
+  if (hyperliquidData?.btcOrderbook && hyperliquidData.source === 'live') {
+    const ratio = hyperliquidData.btcOrderbook.imbalanceRatio;
+    // Positive ratio = buy-side dominant = bullish = positive signal
+    obImbalanceScore = Math.max(-100, Math.min(100, Math.round(ratio * 80)));
+    obImbalanceSource = 'live';
+    const ob = hyperliquidData.btcOrderbook;
+    obImbalanceExplanation = `Hyperliquid BTC perp orderbook: Bid $${(ob.bidDepthUsd / 1e6).toFixed(2)}M vs Ask $${(ob.askDepthUsd / 1e6).toFixed(2)}M. Imbalance ratio: ${ratio >= 0 ? '+' : ''}${(ratio * 100).toFixed(1)}%. ${ob.imbalanceLabel}.`;
+  }
+
   const valuesMap: Record<string, { category: SignalCategory; score: number; explanation: string; sourceField: string }> = {
     etfFlowPressure: { category: 'etf-flow-pressure', score: etfScore, explanation: etfExplanation, sourceField: 'btcSnapshot.change_pct_24h' },
     macroTreasuryPressure: { category: 'macro-treasury-pressure', score: macroScore, explanation: macroExplanation, sourceField: 'indexSnapshot.24h_change_pct' },
-    btcVolatility: { category: 'btc-volatility', score: volScore, explanation: volExplanation, sourceField: 'btcSnapshot.change_pct_24h' },
+    btcVolatility: { category: 'btc-volatility', score: volScore, explanation: volExplanation, sourceField: volSource },
     stablecoinLiquidity: { category: 'stablecoin-liquidity', score: stableScore, explanation: stableExplanation, sourceField: 'indexSnapshot.24h_change_pct' },
     marketSentiment: { category: 'market-sentiment', score: sentimentScore, explanation: sentimentExplanation, sourceField: 'newsList' },
-    fundingRatePressure: { category: 'funding-rate-pressure', score: fundingScore, explanation: fundingExplanation, sourceField: 'btcSnapshot.change_pct_24h' },
+    fundingRatePressure: { category: 'funding-rate-pressure', score: fundingScore, explanation: fundingExplanation, sourceField: fundingRates ? 'Binance Futures' : 'btcSnapshot.change_pct_24h' },
     onChainRisk: { category: 'onchain-risk', score: onchainScore, explanation: onchainExplanation, sourceField: 'btcSnapshot.change_pct_24h' },
     ssiIndexMomentum: { category: 'ssi-momentum', score: ssiScore, explanation: ssiExplanation, sourceField: 'ssiData' },
     newsRegimeAlert: { category: 'news-regime-alert', score: newsScore, explanation: newsExplanation, sourceField: 'newsList' }
@@ -137,9 +213,13 @@ export function normalizeSoSoValueData(
 
   const overallSource = sosoResult.source;
 
-  return Object.entries(SIGNAL_INTEGRITY_MAP).map(([id, config], index) => {
+  const baseSignals: MarketSignal[] = Object.entries(SIGNAL_INTEGRITY_MAP).map(([id, config], index) => {
     const detail = valuesMap[id];
-    const conditionMet = sosoResult.available ? config.condition(sosoResult, ssiData) : false;
+    let conditionMet = sosoResult.available ? config.condition(sosoResult, ssiData) : false;
+
+    if (id === 'fundingRatePressure' && fundingRates) {
+      conditionMet = true;
+    }
 
     if (!conditionMet || !sosoResult.available) {
       return {
@@ -162,27 +242,79 @@ export function normalizeSoSoValueData(
       } as unknown as MarketSignal;
     }
 
-    // Determine specific signal source
     let signalSource: SignalSource = overallSource;
-    if (id === 'btcVolatility' || id === 'macroTreasuryPressure' || id === 'etfFlowPressure') {
+    if (id === 'btcVolatility') {
+      signalSource = volSource === 'deribit-dvol' ? 'live' : 'derived';
+    } else if (id === 'macroTreasuryPressure' || id === 'etfFlowPressure') {
       signalSource = 'derived';
     }
+
+    // Apply risk profile weight to score
+    const weight = getSignalWeight(riskProfile, detail.category);
+    const weightedScore = Math.round(Math.max(-100, Math.min(100, detail.score * weight)));
 
     return {
       id: `sig-live-${detail.category}-${now.getTime()}-${index}`,
       category: detail.category,
       label: SIGNAL_DISPLAY_NAMES[id],
       name: SIGNAL_DISPLAY_NAMES[id],
-      score: detail.score,
-      value: detail.score,
-      severity: getSeverity(detail.score),
+      score: weightedScore,
+      value: weightedScore,
+      severity: getSeverity(weightedScore),
       confidence: latestNews ? 85 : 70,
       timestamp: now.toISOString(),
       explanation: detail.explanation,
       source: signalSource,
       sourceField: detail.sourceField,
       unavailableReason: null,
-      direction: getDirection(detail.score)
+      direction: getDirection(weightedScore)
     } as unknown as MarketSignal;
   });
+
+  // Append Deribit options skew signal if available
+  const extraSignals: MarketSignal[] = [];
+
+  if (optionsSkewSource !== 'unavailable') {
+    const w = getSignalWeight(riskProfile, 'options-skew');
+    const ws = Math.round(Math.max(-100, Math.min(100, optionsSkewScore * w)));
+    extraSignals.push({
+      id: `sig-live-options-skew-${now.getTime()}`,
+      category: 'btc-volatility' as SignalCategory,
+      label: 'Options Put/Call Skew (Deribit)',
+      name: 'Options Put/Call Skew (Deribit)',
+      score: ws,
+      value: ws,
+      severity: getSeverity(ws),
+      confidence: 90,
+      timestamp: now.toISOString(),
+      explanation: optionsSkewExplanation,
+      source: optionsSkewSource,
+      sourceField: 'deribit-skew',
+      unavailableReason: null,
+      direction: getDirection(ws)
+    } as unknown as MarketSignal);
+  }
+
+  if (obImbalanceSource !== 'unavailable') {
+    const w = getSignalWeight(riskProfile, 'orderbook-imbalance');
+    const ws = Math.round(Math.max(-100, Math.min(100, obImbalanceScore * w)));
+    extraSignals.push({
+      id: `sig-live-ob-imbalance-${now.getTime()}`,
+      category: 'funding-rate-pressure' as SignalCategory,
+      label: 'Orderbook Imbalance (Hyperliquid)',
+      name: 'Orderbook Imbalance (Hyperliquid)',
+      score: ws,
+      value: ws,
+      severity: getSeverity(ws),
+      confidence: 85,
+      timestamp: now.toISOString(),
+      explanation: obImbalanceExplanation,
+      source: obImbalanceSource,
+      sourceField: 'hyperliquid-l2',
+      unavailableReason: null,
+      direction: getDirection(ws)
+    } as unknown as MarketSignal);
+  }
+
+  return [...baseSignals, ...extraSignals];
 }

@@ -1,5 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { injected, coinbaseWallet } from 'wagmi/connectors';
 import { getOnChainPortfolio } from '@/lib/wallet/portfolio';
+import { useNetwork } from '@/lib/store/network-context';
 import type { PortfolioAsset } from '@/types/portfolio';
 
 interface SodexAccountState {
@@ -13,84 +16,97 @@ interface SodexAccountState {
 }
 
 export function useWalletPortfolio() {
-  const [walletConnected, setWalletConnected] = useState(false);
-  const [walletAddress, setWalletAddress] = useState('');
+  // ── Wagmi native wallet state ──────────────────────────────────────────────
+  const { address: wagmiAddress, isConnected: wagmiConnected, chainId: wagmiChainId } = useAccount();
+  const { connect } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { isTestnet, activeChainId } = useNetwork();
+
+  // ── Watch-only address overlay (paste-to-watch mode) ─────────────────────
+  const [watchAddress, setWatchAddress] = useState<string>('');
   const [addressSource, setAddressSource] = useState<'wallet' | 'watch' | 'env' | null>(null);
-  
+
+  // ── Portfolio state ────────────────────────────────────────────────────────
   const [assets, setAssets] = useState<PortfolioAsset[] | null>(null);
   const [sodexState, setSodexState] = useState<SodexAccountState | null>(null);
   const [loadingHoldings, setLoadingHoldings] = useState(false);
   const [error, setError] = useState<{ error: string; code?: string; setup?: string } | null>(null);
 
+  // Derived: effective wallet address (wallet > watch > env fallback)
+  const walletAddress = wagmiConnected && wagmiAddress
+    ? wagmiAddress.toLowerCase()
+    : watchAddress || '';
+
+  const walletConnected = wagmiConnected || !!watchAddress;
+
+  // Re-derive address source whenever state changes
   useEffect(() => {
-    const isConn = localStorage.getItem('dg_wallet_connected') === 'true';
-    const addr = localStorage.getItem('dg_wallet_address') || '';
-    const src = localStorage.getItem('dg_address_source') as 'wallet' | 'watch' | 'env' | null;
-    if (isConn && addr) {
-      setWalletConnected(true);
-      setWalletAddress(addr);
-      setAddressSource(src || 'wallet');
+    if (wagmiConnected && wagmiAddress) {
+      setAddressSource('wallet');
+    } else if (watchAddress) {
+      setAddressSource('watch');
+    } else {
+      setAddressSource(null);
     }
-  }, []);
+  }, [wagmiConnected, wagmiAddress, watchAddress]);
 
   const loadPortfolio = useCallback(async (addressToLoad?: string, source?: 'wallet' | 'watch' | 'env') => {
     setLoadingHoldings(true);
     setError(null);
     try {
       const activeAddr = addressToLoad || walletAddress;
-      
+      const chainId = activeChainId;
+
       let fetchedAssets: PortfolioAsset[] = [];
       let fetchedSodexState: SodexAccountState | null = null;
-      let usedAddress = activeAddr;
 
-      // Fetch SoDEX State
-      const url = activeAddr 
-        ? `/api/terminal/portfolio?address=${encodeURIComponent(activeAddr)}`
-        : `/api/terminal/portfolio`;
-      
-      const res = await fetch(url);
+      const headers: Record<string, string> = {};
+      const customApiKey = localStorage.getItem('dg_sodex_api_key');
+      if (customApiKey) {
+        headers['x-sodex-api-key'] = customApiKey;
+      }
+
+      // Fetch SoDEX account state
+      const url = activeAddr
+        ? `/api/terminal/portfolio?address=${encodeURIComponent(activeAddr)}&chainId=${chainId}`
+        : `/api/terminal/portfolio?chainId=${chainId}`;
+
+      const res = await fetch(url, { headers });
       const data = await res.json();
-      
+
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to fetch SoDEX state');
+        throw new Error(data.error || 'Failed to fetch portfolio');
       }
 
       if (data.sodexAccountState) {
         fetchedSodexState = data.sodexAccountState;
       }
-      if (data.address) {
-        usedAddress = data.address;
-      }
 
-      // Fetch On-chain assets if we have an address
+      const usedAddress = data.address || activeAddr;
+
+      // Fetch on-chain assets if we have an address
       if (usedAddress) {
         try {
-          fetchedAssets = await getOnChainPortfolio(usedAddress);
+          fetchedAssets = await getOnChainPortfolio(usedAddress, chainId);
         } catch (err) {
           console.error('Failed to read on-chain portfolio', err);
-          // Non-blocking error, just set empty assets
         }
       }
 
       setAssets(fetchedAssets);
       setSodexState(fetchedSodexState);
-      
-      if (usedAddress) {
-        setWalletAddress(usedAddress);
-        setWalletConnected(true);
-        const activeSource = source ?? (data.searchParams?.address ? 'watch' : 'env');
-        setAddressSource(activeSource);
-        localStorage.setItem('dg_wallet_connected', 'true');
-        localStorage.setItem('dg_wallet_address', usedAddress);
-        localStorage.setItem('dg_address_source', activeSource);
+
+      if (source) {
+        setAddressSource(source);
       }
     } catch (err) {
       setError({ error: err instanceof Error ? err.message : 'Network error — could not reach portfolio endpoint.' });
     } finally {
       setLoadingHoldings(false);
     }
-  }, [walletAddress]);
+  }, [walletAddress, activeChainId]);
 
+  // Auto-reload portfolio when wallet connects or network changes
   useEffect(() => {
     if (walletConnected && walletAddress) {
       void loadPortfolio(walletAddress, addressSource || 'wallet');
@@ -98,90 +114,63 @@ export function useWalletPortfolio() {
       setAssets(null);
       setSodexState(null);
     }
-  }, [walletConnected, walletAddress, addressSource, loadPortfolio]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletConnected, walletAddress, activeChainId]);
 
-  const connectWallet = async (setConnecting: (val: boolean) => void, setWalletError: (err: string | null) => void) => {
+  // ── Wallet connect helpers ────────────────────────────────────────────────
+  const connectWallet = async (
+    setConnecting: (val: boolean) => void,
+    setWalletError: (err: string | null) => void
+  ) => {
     setConnecting(true);
     setWalletError(null);
     try {
-      type EthereumProvider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
-      const ethereum = typeof window !== 'undefined'
-        ? (window as unknown as { ethereum?: EthereumProvider }).ethereum
-        : undefined;
-
-      if (!ethereum) {
-        setWalletError('Web3 browser extension (MetaMask/Rabby) not found. Please install one or use the Paste/Watch Address option below.');
-        return;
-      }
-
-      // Force MetaMask to show the account picker every time — even if already connected.
-      // wallet_requestPermissions triggers the popup regardless of cached sessions,
-      // making this work correctly for multi-user scenarios where different users
-      // may share the same browser or switch accounts.
-      try {
-        await ethereum.request({
-          method: 'wallet_requestPermissions',
-          params: [{ eth_accounts: {} }]
-        });
-      } catch {
-        // User dismissed the permissions popup — treat as cancellation
-        setWalletError('Wallet connection cancelled. Please try again and approve in MetaMask.');
-        return;
-      }
-
-      // After permissions granted, get the selected accounts
-      const accounts = await ethereum.request({ method: 'eth_accounts' }) as string[];
-      if (accounts && accounts[0]) {
-        const addr = accounts[0].toLowerCase();
-        setWalletAddress(addr);
-        setAddressSource('wallet');
-        setWalletConnected(true);
-        localStorage.setItem('dg_wallet_connected', 'true');
-        localStorage.setItem('dg_wallet_address', addr);
-        localStorage.setItem('dg_address_source', 'wallet');
-      } else {
-        setWalletError('No account selected. Please select an account in MetaMask.');
-      }
+      // Prefer injected (MetaMask/Rabby), fall back to Coinbase Wallet
+      await connect({ connector: injected() });
     } catch (err) {
       console.error('Wallet connection failed:', err);
-      setWalletError(err instanceof Error ? err.message : 'Wallet connection rejected or failed.');
+      // If injected not found, try Coinbase Wallet
+      try {
+        await connect({ connector: coinbaseWallet({ appName: 'DeltaGuard AI' }) });
+      } catch {
+        setWalletError(
+          err instanceof Error
+            ? err.message
+            : 'No Web3 wallet found. Install MetaMask or Rabby.'
+        );
+      }
     } finally {
       setConnecting(false);
     }
   };
 
-  const handleWatchAddressSubmit = (watchAddressInput: string, setErrorForm: (err: { error: string; code?: string; setup?: string } | null) => void) => {
-    if (!watchAddressInput.startsWith('0x') || watchAddressInput.length !== 42) {
+  const handleWatchAddressSubmit = (
+    input: string,
+    setErrorForm: (err: { error: string; code?: string; setup?: string } | null) => void
+  ) => {
+    if (!input.startsWith('0x') || input.length !== 42) {
       setErrorForm({ error: 'Invalid Ethereum address. Must start with 0x and be 42 characters long.' });
       return;
     }
     setErrorForm(null);
-    setWalletAddress(watchAddressInput);
-    setAddressSource('watch');
-    setWalletConnected(true);
-    localStorage.setItem('dg_wallet_connected', 'true');
-    localStorage.setItem('dg_wallet_address', watchAddressInput);
-    localStorage.setItem('dg_address_source', 'watch');
+    setWatchAddress(input.toLowerCase());
   };
 
   const disconnectWallet = () => {
-    setWalletConnected(false);
-    setWalletAddress('');
+    if (wagmiConnected) {
+      disconnect();
+    }
+    setWatchAddress('');
     setAddressSource(null);
     setSodexState(null);
     setAssets(null);
-    localStorage.removeItem('dg_wallet_connected');
-    localStorage.removeItem('dg_wallet_address');
-    localStorage.removeItem('dg_address_source');
-    // Note: MetaMask permissions are site-wide and cannot be revoked by JS.
-    // The next connectWallet call uses wallet_requestPermissions which forces
-    // the account picker regardless — so switching users works correctly.
   };
 
   return {
     walletConnected,
     walletAddress,
     addressSource,
+    chainId: wagmiChainId ?? activeChainId,
     assets,
     sodexState,
     loadingHoldings,
@@ -190,6 +179,6 @@ export function useWalletPortfolio() {
     connectWallet,
     handleWatchAddressSubmit,
     disconnectWallet,
-    setError
+    setError,
   };
 }

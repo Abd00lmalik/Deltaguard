@@ -5,7 +5,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { FlaskConical, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { useNetwork } from '@/lib/store/network-context';
 import type { ProviderHealth } from '@/lib/types/signal-source';
 
 interface HealthEntry {
@@ -61,6 +63,7 @@ function StatusPill({ label, health }: { label: string; health: ProviderHealth |
 
 export function LiveStatusBar() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const { isTestnet, networkLabel, toggleNetwork } = useNetwork();
 
   useEffect(() => {
     let active = true;
@@ -84,22 +87,31 @@ export function LiveStatusBar() {
   }, []);
 
   const sos  = health?.sosovalue?.status   ?? 'checking';
-  const ssi  = health?.ssi?.status         ?? 'checking';
   const sodP = health?.sodexPublic?.status ?? 'checking';
   const sodS = health?.sodexSigned?.status ?? 'checking';
 
   return (
-    <div className="flex h-9 items-center justify-between border-b border-accent-lime/10 bg-accent-lime/[0.04] px-4 font-manrope text-[11px] text-text-muted">
+    <div className="flex h-9 items-center justify-between border-b border-accent-lime/10 bg-accent-lime/[0.04] px-4 font-manrope text-[11px] text-text-muted overflow-hidden">
       <div className="flex items-center gap-5 overflow-x-auto">
         <StatusPill label="SoSoValue" health={sos as ProviderHealth | 'checking'} />
-        <StatusPill label="SSI"       health={ssi as ProviderHealth | 'checking'} />
         <StatusPill label="SoDEX Public" health={sodP as ProviderHealth | 'checking'} />
         <StatusPill label="SoDEX Signed" health={sodS as ProviderHealth | 'checking'} />
       </div>
 
-      <span className="rounded bg-accent-lime/10 px-1.5 py-0.5 font-manrope text-[10px] font-bold tracking-wider text-accent-lime uppercase">
-        Live Testnet
-      </span>
+      {/* Runtime Network Toggle */}
+      <button
+        onClick={toggleNetwork}
+        title={`Currently on ${networkLabel}. Click to switch.`}
+        className={cn(
+          'flex items-center gap-1.5 rounded-full px-2.5 py-1 font-manrope text-[10px] font-bold tracking-wider uppercase transition-colors shrink-0',
+          isTestnet
+            ? 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25'
+            : 'bg-accent-lime/10 text-accent-lime hover:bg-accent-lime/20'
+        )}
+      >
+        {isTestnet ? <FlaskConical className="h-3 w-3" /> : <Globe className="h-3 w-3" />}
+        {isTestnet ? 'Testnet' : 'Mainnet'}
+      </button>
     </div>
   );
 }

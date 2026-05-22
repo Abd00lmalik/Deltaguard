@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useAccount } from 'wagmi';
 import { AlertTriangle, CheckCircle, RefreshCw, XCircle } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { ExecutionTimeline } from '@/components/execution/ExecutionTimeline';
@@ -52,12 +53,8 @@ export default function TerminalExecutionPage() {
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [setupWarning, setSetupWarning] = useState<string[] | null>(null);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-
-  useEffect(() => {
-    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
-    setWalletAddress(addr);
-  }, []);
+  const { address: wagmiAddress } = useAccount();
+  const walletAddress = wagmiAddress?.toLowerCase() ?? null;
 
   const fetchStatus = useCallback(async (overrideAddr?: string | null) => {
     const activeAddr = overrideAddr !== undefined ? overrideAddr : walletAddress;
@@ -83,7 +80,20 @@ export default function TerminalExecutionPage() {
     setApproving(true);
     setSetupWarning(null);
     try {
-      const res = await fetch(`/api/terminal/execution/approve?address=${encodeURIComponent(walletAddress)}`, { method: 'POST' });
+      const headers: Record<string, string> = {};
+      const customApiKey = localStorage.getItem('dg_sodex_api_key');
+      const customApiPrivateKey = localStorage.getItem('dg_sodex_api_private_key');
+      if (customApiKey) {
+        headers['x-sodex-api-key'] = customApiKey;
+      }
+      if (customApiPrivateKey) {
+        headers['x-sodex-api-private-key'] = customApiPrivateKey;
+      }
+
+      const res = await fetch(`/api/terminal/execution/approve?address=${encodeURIComponent(walletAddress)}`, {
+        method: 'POST',
+        headers
+      });
       const data = await res.json();
       if (data.executionStopped) {
         setSetupWarning(data.setupRequired ?? []);
@@ -121,13 +131,13 @@ export default function TerminalExecutionPage() {
   }
 
   useEffect(() => {
-    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
-    if (addr) {
-      void fetchStatus(addr);
+    if (walletAddress) {
+      void fetchStatus(walletAddress);
     } else {
       setLoading(false);
     }
   }, [walletAddress, fetchStatus]);
+
 
   const phase = state?.phase ?? 'NONE';
   const order = state?.hedgeOrder;

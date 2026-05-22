@@ -12,6 +12,8 @@
 import type { CompositeScore, MarketSignal, SignalSeverity } from '@/types/signals';
 import { normalizeSoSoValueData } from './normalizer';
 import { getSoSoValueData } from './provider';
+import { fetchBtcEthFundingRates } from '@/lib/integrations/coinglass/client';
+import { getSignalWeight, type RiskProfile } from '@/lib/config/signal-weights';
 
 const SEVERITY_WEIGHTS: Record<SignalSeverity, number> = {
   critical: 1.45,
@@ -21,7 +23,7 @@ const SEVERITY_WEIGHTS: Record<SignalSeverity, number> = {
   positive: 1
 };
 
-export function calculateCompositeScore(signals: MarketSignal[]): number | null {
+export function calculateCompositeScore(signals: MarketSignal[], riskProfile: RiskProfile = 'balanced'): number | null {
   const unavailableSignals = signals.filter(
     (s: MarketSignal) => s.value === null || s.source === 'unavailable'
   );
@@ -36,7 +38,9 @@ export function calculateCompositeScore(signals: MarketSignal[]): number | null 
 
   const weighted = activeSignals.reduce(
     (acc, signal) => {
-      const weight = SEVERITY_WEIGHTS[signal.severity] * ((signal.confidence ?? 100) / 100);
+      const baseWeight = SEVERITY_WEIGHTS[signal.severity] * ((signal.confidence ?? 100) / 100);
+      const profileWeight = getSignalWeight(riskProfile, signal.category);
+      const weight = baseWeight * profileWeight;
       return {
         score: acc.score + signal.score * weight,
         weight: acc.weight + weight
@@ -49,8 +53,14 @@ export function calculateCompositeScore(signals: MarketSignal[]): number | null 
 }
 
 export async function fetchMarketSignals(): Promise<MarketSignal[]> {
-  const data = await getSoSoValueData();
-  return normalizeSoSoValueData(data, null);
+  const [data, fundingRates] = await Promise.all([
+    getSoSoValueData(),
+    fetchBtcEthFundingRates().catch((err) => {
+      console.warn('Failed to fetch funding rates in server-client:', err);
+      return undefined;
+    })
+  ]);
+  return normalizeSoSoValueData(data, null, fundingRates || undefined);
 }
 
 export async function fetchCompositeScore(): Promise<CompositeScore> {

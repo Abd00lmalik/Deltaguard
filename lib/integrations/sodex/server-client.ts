@@ -60,9 +60,13 @@ export async function placeOrder(
     notionalUsd: number;
     estimatedPrice: number;
   },
-  accountId: number
+  accountId: number,
+  customCredentials?: { apiKey?: string; apiPrivateKey?: string }
 ): Promise<{ orderId: string; status: string; filledPrice?: number; filledAt?: string }> {
-  if (!BASE_URL || !PRIVATE_KEY) {
+  const activePrivateKey = customCredentials?.apiPrivateKey || PRIVATE_KEY;
+  const activeApiKey = customCredentials?.apiKey || API_KEY_NAME;
+
+  if (!BASE_URL || !activePrivateKey) {
     throw new Error('SoDEX credentials not configured for signing.');
   }
 
@@ -125,7 +129,7 @@ export async function placeOrder(
     nonce: BigInt(nonce)
   };
 
-  const wallet = new Wallet(PRIVATE_KEY);
+  const wallet = new Wallet(activePrivateKey);
   const rawSignature = await wallet.signTypedData(domain, types, message);
   const typedSignature = '0x01' + rawSignature.substring(2);
 
@@ -136,7 +140,7 @@ export async function placeOrder(
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'X-API-Key': API_KEY_NAME,
+      'X-API-Key': activeApiKey,
       'X-API-Sign': typedSignature,
       'X-API-Nonce': nonce.toString()
     },
@@ -165,7 +169,10 @@ export async function cancelOrder(orderId: string): Promise<{ orderId: string; s
   return { orderId, status: 'cancelled' };
 }
 
-export async function getSodexAccountState(address: string): Promise<{
+export async function getSodexAccountState(
+  address: string,
+  customCredentials?: { apiKey?: string }
+): Promise<{
   address: string;
   accountId: number;
   balanceUsd: number;
@@ -178,6 +185,8 @@ export async function getSodexAccountState(address: string): Promise<{
     throw new Error('SoDEX API base URL not configured.');
   }
 
+  const activeApiKey = customCredentials?.apiKey || API_KEY_NAME;
+
   const endpoint = PERPS_BASE.endsWith('/')
     ? `${PERPS_BASE}trade/account?address=${encodeURIComponent(address)}`
     : `${PERPS_BASE}/trade/account?address=${encodeURIComponent(address)}`;
@@ -185,7 +194,7 @@ export async function getSodexAccountState(address: string): Promise<{
   const res = await fetch(endpoint, {
     headers: {
       'Accept': 'application/json',
-      'X-API-Key': API_KEY_NAME
+      'X-API-Key': activeApiKey
     }
   });
   
