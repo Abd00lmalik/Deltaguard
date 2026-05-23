@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, GitBranch, RefreshCw, Wallet, Coins, FileSignature, Search, ArrowUpRight, FlaskConical } from 'lucide-react';
+import { AlertTriangle, GitBranch, RefreshCw, Wallet, Coins, FileSignature, Search, ArrowUpRight, FlaskConical, Shield } from 'lucide-react';
+import { cn } from '@/lib/utils/cn';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import { Topbar } from '@/components/layout/Topbar';
 import { AllocationChart } from '@/components/portfolio/AllocationChart';
@@ -21,6 +22,7 @@ export default function TerminalPortfolioPage() {
     walletAddress,
     addressSource,
     assets,
+    defiPositions,
     sodexState,
     loadingHoldings,
     error,
@@ -85,7 +87,9 @@ export default function TerminalPortfolioPage() {
     }
   }
 
-  const totalValue = assets?.reduce((s, a) => s + a.valueUsd, 0) ?? 0;
+  const spotValue = assets?.reduce((s, a) => s + a.valueUsd, 0) ?? 0;
+  const defiValue = defiPositions?.reduce((s, d) => s + d.valueUsd, 0) ?? 0;
+  const totalValue = spotValue + defiValue;
 
   return (
     <>
@@ -326,14 +330,26 @@ export default function TerminalPortfolioPage() {
                     {assets?.length === 0 && (
                       <tr>
                         <td colSpan={7} className="px-4 py-8 text-center font-manrope text-sm text-text-muted">
-                          No assets found on Sepolia for this address.
+                          No assets found on {networkLabel} for this address.
                         </td>
                       </tr>
                     )}
                   </tbody>
                   <tfoot>
                     <tr className="border-t border-white/[0.08]">
-                      <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-text-muted">Total</td>
+                      <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-text-muted">Spot Balance Total</td>
+                      <td className="px-4 py-3 font-mono font-bold text-white">${spotValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                      <td colSpan={2} />
+                    </tr>
+                    {defiValue > 0 && (
+                      <tr className="border-t border-white/[0.04]">
+                        <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-text-muted">DeFi Positions Net Total</td>
+                        <td className="px-4 py-3 font-mono font-bold text-white">${defiValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td colSpan={2} />
+                      </tr>
+                    )}
+                    <tr className="border-t border-white/[0.08] bg-white/[0.01]">
+                      <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-accent-lime">Total Net Portfolio Value</td>
                       <td className="px-4 py-3 font-mono font-bold text-accent-lime">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                       <td colSpan={2} />
                     </tr>
@@ -341,6 +357,101 @@ export default function TerminalPortfolioPage() {
                 </table>
               </div>
             </GlowCard>
+
+            {/* DeFi Positions Section */}
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-3">
+                <SectionLabel>DeFi Positions</SectionLabel>
+                <StatusBadge variant={(defiPositions ?? []).length > 0 ? 'safe' : 'muted'} label={`${(defiPositions ?? []).length} Active Protocol${(defiPositions ?? []).length === 1 ? '' : 's'}`} />
+              </div>
+              
+              {defiPositions && defiPositions.length > 0 ? (
+                <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {defiPositions.map((pos) => {
+                    const chainName = pos.chainId === 1 ? 'Ethereum' : pos.chainId === 8453 ? 'Base' : pos.chainId === 10 ? 'Optimism' : 'Sepolia';
+                    return (
+                      <GlowCard key={pos.id} className="p-5 border-white/[0.04] bg-neutral-900/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-sora text-sm font-bold text-white flex items-center gap-2">
+                              <Shield className="h-4 w-4 text-accent-lime" /> {pos.name}
+                            </h4>
+                            <span className="rounded-full bg-white/[0.05] px-2 py-0.5 font-manrope text-[10px] text-text-muted">
+                              {chainName}
+                            </span>
+                          </div>
+                          
+                          {pos.protocol === 'aave' && (
+                            <div className="mt-4 space-y-2">
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">Collateral</span>
+                                <span className="text-white font-mono">${pos.details.collateralUsd?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">Debt</span>
+                                <span className="text-white font-mono">${pos.details.debtUsd?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                              </div>
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">Health Factor</span>
+                                <span className={cn(
+                                  "font-mono font-bold",
+                                  (pos.details.healthFactor ?? 2.0) <= 1.2 ? "text-danger" : (pos.details.healthFactor ?? 2.0) <= 1.5 ? "text-warning" : "text-accent-lime"
+                                )}>
+                                  {pos.details.healthFactor}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+
+                          {pos.protocol === 'lido' && (
+                            <div className="mt-4 space-y-2">
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">Staked Amount</span>
+                                <span className="text-white font-mono">{pos.details.amount?.toFixed(4)} stETH</span>
+                              </div>
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">stETH Price</span>
+                                <span className="text-white font-mono">${pos.details.priceUsd?.toLocaleString()}</span>
+                              </div>
+                            </div>
+                          )}
+
+                          {pos.protocol === 'uniswap' && (
+                            <div className="mt-4 space-y-2">
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">Token ID</span>
+                                <span className="text-white font-mono">#{pos.details.tokenId}</span>
+                              </div>
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">Pair</span>
+                                <span className="text-white font-mono">{pos.details.pairName}</span>
+                              </div>
+                              <div className="flex justify-between text-xs font-manrope">
+                                <span className="text-text-muted">Liquidity</span>
+                                <span className="text-white font-mono truncate max-w-[120px]">{pos.details.liquidity}</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="mt-6 pt-4 border-t border-white/[0.05] flex justify-between items-center">
+                          <span className="text-xs font-manrope text-text-muted">Net Position Value</span>
+                          <span className="font-sora text-sm font-bold text-accent-lime">
+                            ${pos.valueUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          </span>
+                        </div>
+                      </GlowCard>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex h-28 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-neutral-900/20 text-center p-4">
+                  <p className="font-manrope text-xs text-text-muted">
+                    No active DeFi protocols detected on {isTestnet ? 'Sepolia' : 'Ethereum, Base, or Optimism'}.
+                  </p>
+                </div>
+              )}
+            </div>
 
             <div className="grid gap-6 xl:grid-cols-2">
               <AllocationChart assets={assets || undefined} />

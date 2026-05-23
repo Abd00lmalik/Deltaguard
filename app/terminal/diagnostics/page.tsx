@@ -130,7 +130,13 @@ export default function TerminalDiagnosticsPage() {
   async function fetchDiagnostics() {
     setLoading(true);
     try {
-      const res = await fetch('/api/terminal/diagnostics');
+      const headers: Record<string, string> = {};
+      const customApiKey = localStorage.getItem('dg_sodex_api_key');
+      const customApiSecret = localStorage.getItem('dg_sodex_api_private_key');
+      if (customApiKey) headers['x-sodex-api-key'] = customApiKey;
+      if (customApiSecret) headers['x-sodex-api-private-key'] = customApiSecret;
+
+      const res = await fetch('/api/terminal/diagnostics', { headers });
       const json = await res.json();
       setData(json);
     } catch (e) {

@@ -49,7 +49,9 @@ async function checkSoDEXPublicHealth(): Promise<{ healthy: boolean; status: num
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const headerApiKey = request.headers.get('x-sodex-api-key') || process.env.SODEX_API_KEY;
+  const headerApiPrivateKey = request.headers.get('x-sodex-api-private-key') || process.env.SODEX_API_PRIVATE_KEY;
   // All checks run in parallel
   const [sosoResult, ssiResult, sodexResult] = await Promise.allSettled([
     getSoSoValueData(),
@@ -82,9 +84,9 @@ export async function GET() {
 
   // SoDEX Signed — requires valid private key + API key credentials + working public connection
   const sodexSignedHealth: ProviderHealth =
-    process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY && sodexPublicHealth === 'connected'
+    headerApiPrivateKey && headerApiKey && sodexPublicHealth === 'connected'
       ? 'connected'
-      : process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY
+      : headerApiPrivateKey && headerApiKey
       ? 'degraded'
       : 'setup_required';
 

@@ -17,12 +17,17 @@ import { fetchSSIData } from '@/lib/integrations/ssi/server-client';
 import { normalizeSoSoValueData } from '@/lib/integrations/sosovalue/normalizer';
 import { calculateCompositeScore } from '@/lib/integrations/sosovalue/server-client';
 import { fetchBtcEthFundingRates } from '@/lib/integrations/coinglass/client';
+import { fetchDeribitIntelligence } from '@/lib/integrations/deribit/client';
+import { fetchHyperliquidIntelligence } from '@/lib/integrations/hyperliquid/client';
 import { runGeminiAgentScan } from '@/lib/agent/gemini-client';
 import { calculateNetDelta, calculateRiskScore, calculateHedgeSize, getLiveBtcPrice } from '@/lib/risk/delta-engine';
 import { determineAgentMode, getExecutionBlockers, buildRecommendation, type AgentCapabilities } from '@/lib/agent/capabilities';
 import { getOnChainPortfolio } from '@/lib/wallet/portfolio';
+import { getDeFiPositions, type DeFiPosition } from '@/lib/wallet/defi-positions';
 import { type PortfolioAsset } from '@/types/portfolio';
 import { type ProviderError } from '@/lib/types/signal-source';
+import { parseRiskProfile } from '@/lib/config/signal-weights';
+import { mainnet, base, optimism, sepolia } from 'viem/chains';
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -31,6 +36,11 @@ export async function POST(req: Request) {
   // Do NOT fall back to SODEX_ACCOUNT_ADDRESS here — this is a multi-user app.
   // Each user connects their own wallet; the env var is only for admin/diagnostics.
   const walletAddress: string | null = body?.walletAddress ?? null;
+  const selectedChainId = body?.chainId ? parseInt(body.chainId, 10) : sepolia.id;
+  const riskProfile = parseRiskProfile(body?.riskProfile);
+
+  const apiKey = req.headers.get('x-sodex-api-key') || process.env.SODEX_API_KEY;
+  const apiSecret = req.headers.get('x-sodex-api-private-key') || process.env.SODEX_API_PRIVATE_KEY;
 
   if (!walletAddress) {
     return NextResponse.json(
@@ -42,29 +52,48 @@ export async function POST(req: Request) {
     );
   }
 
+  const chainsToQuery = selectedChainId === mainnet.id
+    ? [mainnet.id, base.id, optimism.id]
+    : [selectedChainId];
+
   // Run all fetches in parallel — SSI failure must NOT block market signal analysis
   // On-chain portfolio is fetched as SSI fallback when wallet address is available
-  const [sosoResult, ssiResult, onChainResult, fundingRatesResult] = await Promise.allSettled([
+  const [sosoResult, ssiResult, fundingRatesResult, deribitResult, hyperliquidResult, queryResults] = await Promise.allSettled([
     getSoSoValueData(),
     fetchSSIData(walletAddress),
-    walletAddress ? getOnChainPortfolio(walletAddress) : Promise.resolve([]),
     fetchBtcEthFundingRates(),
+    fetchDeribitIntelligence(),
+    fetchHyperliquidIntelligence(),
+    Promise.all(chainsToQuery.map(async (cid) => {
+      const assets = await getOnChainPortfolio(walletAddress, cid).catch(() => [] as PortfolioAsset[]);
+      const defi = await getDeFiPositions(walletAddress, cid).catch(() => [] as DeFiPosition[]);
+      return { assets, defi };
+    }))
   ]);
 
   const sosoData      = sosoResult.status      === 'fulfilled' ? sosoResult.value      : null;
   const ssiData       = ssiResult.status       === 'fulfilled' ? ssiResult.value       : null;
-  const onChainAssets = onChainResult.status   === 'fulfilled' ? onChainResult.value   : [];
   const fundingRates  = fundingRatesResult.status === 'fulfilled' ? fundingRatesResult.value : undefined;
+  const deribitData   = deribitResult.status   === 'fulfilled' ? deribitResult.value   : null;
+  const hyperliquidData = hyperliquidResult.status === 'fulfilled' ? hyperliquidResult.value : null;
+  const results       = queryResults.status    === 'fulfilled' ? queryResults.value    : [];
 
-  // Portfolio exposure is available if SSI works OR if the user's wallet has on-chain assets
-  const hasOnChainPortfolio = Array.isArray(onChainAssets) && onChainAssets.length > 0;
+  const onChainAssets: PortfolioAsset[] = [];
+  const defiPositions: DeFiPosition[] = [];
+  for (const res of results) {
+    onChainAssets.push(...res.assets);
+    defiPositions.push(...res.defi);
+  }
+
+  // Portfolio exposure is available if SSI works OR if the user's wallet has on-chain assets or DeFi positions
+  const hasOnChainPortfolio = onChainAssets.length > 0 || defiPositions.length > 0;
   const hasSSIPortfolio = ssiData?.available === true;
 
   const capabilities: AgentCapabilities = {
     marketIntelligence: sosoData?.available === true,
     portfolioExposure:  hasSSIPortfolio || hasOnChainPortfolio,
     executionVenue:     Boolean(process.env.SODEX_BASE_URL),
-    signedExecution:    Boolean(process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY),
+    signedExecution:    Boolean(apiSecret && apiKey),
   };
 
   const mode = determineAgentMode(capabilities);
@@ -78,15 +107,26 @@ export async function POST(req: Request) {
 
   if (capabilities.marketIntelligence && sosoData) {
     try {
-      signals = normalizeSoSoValueData(sosoData, ssiData ?? null, fundingRates);
-      compositeScore = calculateCompositeScore(signals);
+      signals = normalizeSoSoValueData(
+        sosoData,
+        ssiData ?? null,
+        fundingRates,
+        deribitData || undefined,
+        hyperliquidData || undefined,
+        riskProfile
+      );
+      compositeScore = calculateCompositeScore(signals, riskProfile);
 
       if (compositeScore !== null) {
         // Prefer SSI assets if available, fall back to on-chain wallet assets
         const assets: PortfolioAsset[] = (ssiData?.assets && ssiData.assets.length > 0)
           ? ssiData.assets
-          : (onChainAssets as PortfolioAsset[]);
-        const totalValueUsd = assets.reduce((sum: number, a: PortfolioAsset) => sum + (a.valueUsd ?? 0), 0);
+          : onChainAssets;
+        
+        const spotValueUsd = assets.reduce((sum: number, a: PortfolioAsset) => sum + (a.valueUsd ?? 0), 0);
+        const defiValueUsd = defiPositions.reduce((sum: number, d: DeFiPosition) => sum + (d.valueUsd ?? 0), 0);
+        const totalValueUsd = spotValueUsd + defiValueUsd;
+
         const netDeltaExposure = assets.length > 0 ? calculateNetDelta(assets) : 0;
         const riskScore = calculateRiskScore(signals, netDeltaExposure);
 
@@ -98,9 +138,9 @@ export async function POST(req: Request) {
           lastUpdated: new Date().toISOString()
         };
 
-        // Add thinking delay
-        await new Promise((resolve) => setTimeout(resolve, 1200));
-        agentOutput = await runGeminiAgentScan(signals, portfolioSummary, sosoData.newsList || []);
+        // Add realistic thinking delay (2.5s)
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        agentOutput = await runGeminiAgentScan(signals, portfolioSummary, sosoData.newsList || [], riskProfile);
 
         // Always stage a fresh execution order when agent recommends hedging.
         // We reset regardless of current phase so each scan produces a fresh ticket.
@@ -159,6 +199,8 @@ export async function POST(req: Request) {
   const errors: string[] = [];
   if (sosoResult.status === 'rejected') errors.push(`SoSoValue: ${String(sosoResult.reason)}`);
   if (ssiResult.status === 'rejected')  errors.push(`SSI: ${String(ssiResult.reason)}`);
+  if (deribitResult.status === 'rejected') errors.push(`Deribit: ${String(deribitResult.reason)}`);
+  if (hyperliquidResult.status === 'rejected') errors.push(`Hyperliquid L2: ${String(hyperliquidResult.reason)}`);
   if (sosoData?.errors?.length) sosoData.errors.forEach((e: ProviderError) => errors.push(`SoSoValue ${e.endpoint}: ${e.message}`));
 
   return NextResponse.json({

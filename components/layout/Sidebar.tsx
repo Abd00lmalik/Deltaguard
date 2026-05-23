@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useReducedMotionPreference } from '@/lib/utils/use-reduced-motion';
+import { useNetwork } from '@/lib/store/network-context';
 
 
 
@@ -38,6 +39,7 @@ export interface SidebarProps {
 export function Sidebar({ mode = 'demo' }: SidebarProps) {
   const pathname = usePathname();
   const reducedMotion = useReducedMotionPreference();
+  const { isTestnet, networkLabel } = useNetwork();
   const prefix = mode === 'demo' ? '/demo' : '/terminal';
 
   const navItems = [
@@ -91,15 +93,15 @@ export function Sidebar({ mode = 'demo' }: SidebarProps) {
             )}>
               <span className={cn(
                 "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                mode === 'demo' ? "bg-amber-400" : "bg-accent-lime"
+                mode === 'demo' ? "bg-amber-400" : isTestnet ? "bg-amber-400" : "bg-accent-lime"
               )}></span>
               <span className={cn(
                 "relative inline-flex rounded-full h-2 w-2",
-                mode === 'demo' ? "bg-amber-500" : "bg-accent-lime"
+                mode === 'demo' ? "bg-amber-500" : isTestnet ? "bg-amber-500" : "bg-accent-lime"
               )}></span>
             </span>
             <p className="font-manrope text-[11px] font-semibold text-text-secondary">
-              {mode === 'demo' ? 'Prototype Environment' : 'Live Testnet'}
+              {mode === 'demo' ? 'Prototype Environment' : networkLabel}
             </p>
           </div>
           <p className="font-manrope text-[10px] text-text-muted">v1.0.0</p>

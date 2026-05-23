@@ -56,7 +56,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
 
   const networkLabel = isTestnet
     ? 'Sepolia Testnet'
-    : 'Ethereum Mainnet';
+    : 'Multi-Chain';
 
   return (
     <NetworkContext.Provider

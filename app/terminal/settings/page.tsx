@@ -7,6 +7,7 @@ import { GlowCard } from '@/components/ui/GlowCard';
 import { PillButton } from '@/components/ui/PillButton';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { StatusBadge } from '@/components/ui/StatusBadge';
+import { cn } from '@/lib/utils/cn';
 
 export default function TerminalSettingsPage() {
   const [settings, setSettings] = useState({
@@ -20,6 +21,7 @@ export default function TerminalSettingsPage() {
     hedgeThreshold: -50,
     watchThreshold: 20
   });
+  const [riskProfile, setRiskProfile] = useState<'conservative' | 'balanced' | 'aggressive'>('balanced');
   const [sodexApiKey, setSodexApiKey] = useState('');
   const [sodexApiPrivateKey, setSodexApiPrivateKey] = useState('');
   const [emergencyPaused, setEmergencyPaused] = useState(false);
@@ -29,6 +31,12 @@ export default function TerminalSettingsPage() {
     if (typeof window !== 'undefined') {
       setSodexApiKey(localStorage.getItem('dg_sodex_api_key') || '');
       setSodexApiPrivateKey(localStorage.getItem('dg_sodex_api_private_key') || '');
+      
+      const savedProfile = localStorage.getItem('dg_risk_profile');
+      if (savedProfile === 'conservative' || savedProfile === 'balanced' || savedProfile === 'aggressive') {
+        setRiskProfile(savedProfile);
+      }
+
       const savedSettings = localStorage.getItem('dg_agent_settings');
       if (savedSettings) {
         try {
@@ -46,6 +54,13 @@ export default function TerminalSettingsPage() {
     if (typeof window !== 'undefined') {
       localStorage.setItem('dg_sodex_api_key', key);
       localStorage.setItem('dg_sodex_api_private_key', secret);
+    }
+  }
+
+  function updateRiskProfile(profile: 'conservative' | 'balanced' | 'aggressive') {
+    setRiskProfile(profile);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dg_risk_profile', profile);
     }
   }
 
@@ -70,6 +85,53 @@ export default function TerminalSettingsPage() {
             Configure risk thresholds and execution guardrails for the live testnet environment. Manual confirmation is always enforced.
           </p>
         </header>
+
+        <GlowCard className="p-5">
+          <h2 className="font-sora text-base font-bold text-white">Risk Profile</h2>
+          <p className="mt-1 font-manrope text-xs text-text-muted">
+            Select a risk profile to adjust the signal weights and hedge thresholds. A conservative profile will trigger hedges earlier.
+          </p>
+          <div className="mt-5 grid gap-4 sm:grid-cols-3">
+            {[
+              {
+                id: 'conservative' as const,
+                label: 'Conservative',
+                description: 'Higher weight on bearish signals. Hedges earlier (threshold: -35).',
+                color: 'border-accent-lime/30 text-accent-lime bg-accent-lime-dim'
+              },
+              {
+                id: 'balanced' as const,
+                label: 'Balanced',
+                description: 'Symmetric risk assessment. Default setting (threshold: -50).',
+                color: 'border-blue-500/30 text-blue-400 bg-blue-500/10'
+              },
+              {
+                id: 'aggressive' as const,
+                label: 'Aggressive',
+                description: 'Lower weight on bearish signals. Hedges later (threshold: -65).',
+                color: 'border-purple-500/30 text-purple-400 bg-purple-500/10'
+              }
+            ].map((p) => {
+              const active = riskProfile === p.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => updateRiskProfile(p.id)}
+                  type="button"
+                  className={cn(
+                    "flex flex-col text-left p-4 rounded-xl border transition-all duration-200 outline-none",
+                    active
+                      ? `${p.color} ring-1 ring-white/10`
+                      : "border-white/[0.06] bg-white/[0.02] text-text-muted hover:border-white/15 hover:text-white"
+                  )}
+                >
+                  <span className="font-sora text-sm font-bold">{p.label}</span>
+                  <span className="mt-2 font-manrope text-xs leading-4 opacity-80">{p.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </GlowCard>
 
         <GlowCard className="p-5">
           <h2 className="font-sora text-base font-bold text-white">Execution Controls</h2>

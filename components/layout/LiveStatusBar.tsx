@@ -69,7 +69,13 @@ export function LiveStatusBar() {
     let active = true;
 
     const checkHealth = () => {
-      fetch('/api/terminal/health')
+      const headers: Record<string, string> = {};
+      const customApiKey = localStorage.getItem('dg_sodex_api_key');
+      const customApiSecret = localStorage.getItem('dg_sodex_api_private_key');
+      if (customApiKey) headers['x-sodex-api-key'] = customApiKey;
+      if (customApiSecret) headers['x-sodex-api-private-key'] = customApiSecret;
+
+      fetch('/api/terminal/health', { headers })
         .then((res) => res.json())
         .then((data: HealthResponse) => {
           if (active) setHealth(data);

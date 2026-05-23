@@ -19,17 +19,21 @@ function cleanJsonResponse(text: string): string {
 export async function runGeminiAgentScan(
   signals: MarketSignal[],
   portfolio: PortfolioSummary,
-  news: NewsItem[]
+  news: NewsItem[],
+  riskProfile: string = 'balanced'
 ): Promise<AgentReasoningOutput> {
   if (!GEMINI_API_KEY) {
     console.warn('[DeltaGuard] GEMINI_API_KEY is not configured. Falling back to deterministic scan rules.');
-    return deterministicScan(signals, portfolio);
+    return deterministicScan(signals, portfolio, riskProfile);
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${GEMINI_API_KEY}`;
 
   const userPrompt = `
 Analyze the following live market signals, portfolio exposure, and news context, and output your hedge recommendations.
+
+### User Configuration:
+- Risk Profile: ${riskProfile.toUpperCase()} (Conservative: hedges aggressively early, Balanced: standard symmetric risk response, Aggressive: tolerates higher drawdown, hedges later)
 
 ### Market Signals:
 ${JSON.stringify(signals.map(s => ({ id: s.id, category: s.category, label: s.label, score: s.score, severity: s.severity, confidence: s.confidence, explanation: s.explanation })), null, 2)}
@@ -108,6 +112,6 @@ ${JSON.stringify(news.slice(0, 8).map(n => ({ title: n.title, content: n.content
     };
   } catch (err) {
     console.error('[DeltaGuard] Gemini Agent reasoning failed. Falling back to deterministic scan rules. Error:', err);
-    return deterministicScan(signals, portfolio);
+    return deterministicScan(signals, portfolio, riskProfile);
   }
 }

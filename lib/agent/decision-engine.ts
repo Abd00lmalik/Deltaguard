@@ -4,6 +4,7 @@ import type { MarketSignal, SignalSeverity } from '@/types/signals';
 import { HEDGE_PERCENT } from '@/lib/utils/constants';
 import { calculateHedgeNotional } from '@/lib/risk/hedge-calculator';
 import { buildReasoningNarrative } from './reasoning-engine';
+import { HEDGE_THRESHOLDS, parseRiskProfile, type RiskProfile } from '@/lib/config/signal-weights';
 
 const SEVERITY_WEIGHTS: Record<SignalSeverity, number> = {
   critical: 1.45,
@@ -31,15 +32,19 @@ function calculateCompositeScore(signals: MarketSignal[]): number {
 
 export function runAgentScan(
   signals: MarketSignal[],
-  portfolio: PortfolioSummary
+  portfolio: PortfolioSummary,
+  riskProfileRaw?: string
 ): AgentReasoningOutput {
+  const profile: RiskProfile = parseRiskProfile(riskProfileRaw);
+  const thresholds = HEDGE_THRESHOLDS[profile];
+
   const compositeScore = calculateCompositeScore(signals);
   const portfolioDelta = portfolio.netDeltaExposure;
 
   let decision: AgentDecision = 'watch';
-  if (compositeScore < -50 && portfolioDelta > 0.5) decision = 'hedge';
-  if (compositeScore >= -50 && compositeScore <= 20) decision = 'watch';
-  if (compositeScore > 20) decision = 'no-action';
+  if (compositeScore < thresholds.hedge && portfolioDelta > 0.5) decision = 'hedge';
+  if (compositeScore >= thresholds.hedge && compositeScore <= thresholds.watch) decision = 'watch';
+  if (compositeScore > thresholds.watch) decision = 'no-action';
 
   const hedgeNotional = calculateHedgeNotional(
     portfolio.totalValueUsd,
@@ -66,7 +71,7 @@ export function runAgentScan(
     portfolioDelta,
     confidence: 83,
     reasoningSteps: [
-      `Composite signal score is ${compositeScore}. Hedge threshold is -50. Condition: ${compositeScore} < -50.`,
+      `Composite signal score is ${compositeScore}. Hedge threshold for ${profile} profile is ${thresholds.hedge}. Condition: ${compositeScore} < ${thresholds.hedge}.`,
       `Portfolio net delta is ${portfolioDelta.toFixed(2)}. Long exposure threshold is 0.5. Condition: ${portfolioDelta.toFixed(2)} > 0.5.`,
       decision === 'hedge'
         ? 'Both hedge conditions satisfied. Decision: HEDGE recommended.'
@@ -83,7 +88,7 @@ export function runAgentScan(
     ],
     reasoningNarrative: [],
     decisionRule:
-      'IF compositeScore < -50 AND portfolioDelta > 0.5 THEN decision = HEDGE, hedgeNotional = portfolioValue x delta x hedgePercent, confirmation = REQUIRED.',
+      `IF compositeScore < ${thresholds.hedge} AND portfolioDelta > 0.5 THEN decision = HEDGE, hedgeNotional = portfolioValue x delta x hedgePercent, confirmation = REQUIRED.`,
     hedgeRecommendation,
     warnings: [
       'Hedge does not guarantee profit or full protection.',

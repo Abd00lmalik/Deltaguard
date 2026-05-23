@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { injected, coinbaseWallet } from 'wagmi/connectors';
-import { getOnChainPortfolio } from '@/lib/wallet/portfolio';
 import { useNetwork } from '@/lib/store/network-context';
 import type { PortfolioAsset } from '@/types/portfolio';
+import type { DeFiPosition } from '@/lib/wallet/defi-positions';
 
 interface SodexAccountState {
   address: string;
@@ -26,8 +26,18 @@ export function useWalletPortfolio() {
   const [watchAddress, setWatchAddress] = useState<string>('');
   const [addressSource, setAddressSource] = useState<'wallet' | 'watch' | 'env' | null>(null);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('dg_watch_address');
+      if (saved) {
+        setWatchAddress(saved);
+      }
+    }
+  }, []);
+
   // ── Portfolio state ────────────────────────────────────────────────────────
   const [assets, setAssets] = useState<PortfolioAsset[] | null>(null);
+  const [defiPositions, setDefiPositions] = useState<DeFiPosition[] | null>(null);
   const [sodexState, setSodexState] = useState<SodexAccountState | null>(null);
   const [loadingHoldings, setLoadingHoldings] = useState(false);
   const [error, setError] = useState<{ error: string; code?: string; setup?: string } | null>(null);
@@ -58,6 +68,7 @@ export function useWalletPortfolio() {
       const chainId = activeChainId;
 
       let fetchedAssets: PortfolioAsset[] = [];
+      let fetchedDefi: DeFiPosition[] = [];
       let fetchedSodexState: SodexAccountState | null = null;
 
       const headers: Record<string, string> = {};
@@ -82,18 +93,16 @@ export function useWalletPortfolio() {
         fetchedSodexState = data.sodexAccountState;
       }
 
-      const usedAddress = data.address || activeAddr;
+      if (data.assets) {
+        fetchedAssets = data.assets;
+      }
 
-      // Fetch on-chain assets if we have an address
-      if (usedAddress) {
-        try {
-          fetchedAssets = await getOnChainPortfolio(usedAddress, chainId);
-        } catch (err) {
-          console.error('Failed to read on-chain portfolio', err);
-        }
+      if (data.defiPositions) {
+        fetchedDefi = data.defiPositions;
       }
 
       setAssets(fetchedAssets);
+      setDefiPositions(fetchedDefi);
       setSodexState(fetchedSodexState);
 
       if (source) {
@@ -112,6 +121,7 @@ export function useWalletPortfolio() {
       void loadPortfolio(walletAddress, addressSource || 'wallet');
     } else {
       setAssets(null);
+      setDefiPositions(null);
       setSodexState(null);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,7 +163,11 @@ export function useWalletPortfolio() {
       return;
     }
     setErrorForm(null);
-    setWatchAddress(input.toLowerCase());
+    const parsed = input.toLowerCase();
+    setWatchAddress(parsed);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('dg_watch_address', parsed);
+    }
   };
 
   const disconnectWallet = () => {
@@ -161,9 +175,13 @@ export function useWalletPortfolio() {
       disconnect();
     }
     setWatchAddress('');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('dg_watch_address');
+    }
     setAddressSource(null);
     setSodexState(null);
     setAssets(null);
+    setDefiPositions(null);
   };
 
   return {
@@ -172,6 +190,7 @@ export function useWalletPortfolio() {
     addressSource,
     chainId: wagmiChainId ?? activeChainId,
     assets,
+    defiPositions,
     sodexState,
     loadingHoldings,
     error,

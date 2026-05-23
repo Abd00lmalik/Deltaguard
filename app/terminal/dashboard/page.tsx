@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, ArrowUpRight, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAccount } from 'wagmi';
+import { useNetwork } from '@/lib/store/network-context';
 import { Topbar } from '@/components/layout/Topbar';
 import { DGMetricCard } from '@/components/ui/MetricCard';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -35,21 +37,44 @@ interface PortfolioApiResponse {
 }
 
 export default function TerminalDashboardPage() {
+  const { address: wagmiAddress, isConnected: wagmiConnected } = useAccount();
+  const { activeChainId } = useNetwork();
+  
   const [scanState, setScanState] = useState<'idle' | 'scanning' | 'complete' | 'error'>('idle');
   const [agentOutput, setAgentOutput] = useState<AgentReasoningOutput | null>(null);
   const [scanError, setScanError] = useState<ScanError | null>(null);
   const [activeMessage, setActiveMessage] = useState(0);
   const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
   const [netDelta, setNetDelta] = useState<number | null>(null);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [watchAddress, setWatchAddress] = useState<string>('');
 
-  // Load wallet address and pre-fetch portfolio value when page mounts
   useEffect(() => {
-    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') : null;
-    setWalletAddress(addr);
-    if (!addr) return;
+    if (typeof window !== 'undefined') {
+      setWatchAddress(localStorage.getItem('dg_watch_address') || '');
+    }
+  }, []);
 
-    fetch(`/api/terminal/portfolio?address=${encodeURIComponent(addr)}`)
+  const walletAddress = wagmiConnected && wagmiAddress
+    ? wagmiAddress.toLowerCase()
+    : watchAddress || '';
+
+  const walletConnected = wagmiConnected || !!watchAddress;
+
+  // Fetch portfolio value dynamically when address or chainId changes
+  useEffect(() => {
+    if (!walletAddress) {
+      setPortfolioValue(null);
+      setNetDelta(null);
+      return;
+    }
+
+    const headers: Record<string, string> = {};
+    const customApiKey = localStorage.getItem('dg_sodex_api_key');
+    if (customApiKey) {
+      headers['x-sodex-api-key'] = customApiKey;
+    }
+
+    fetch(`/api/terminal/portfolio?address=${encodeURIComponent(walletAddress)}&chainId=${activeChainId}`, { headers })
       .then((r) => r.json())
       .then((data: PortfolioApiResponse) => {
         // Use server-computed totals if available (faster, consistent)
@@ -67,7 +92,7 @@ export default function TerminalDashboardPage() {
         }
       })
       .catch(() => null);
-  }, []);
+  }, [walletAddress, activeChainId]);
 
   useEffect(() => {
     if (scanState !== 'scanning') return;
@@ -78,10 +103,7 @@ export default function TerminalDashboardPage() {
   }, [scanState]);
 
   async function runScan() {
-    const isConnected = typeof window !== 'undefined' && localStorage.getItem('dg_wallet_connected') === 'true';
-    const addr = typeof window !== 'undefined' ? localStorage.getItem('dg_wallet_address') || '' : '';
-
-    if (!isConnected || !addr) {
+    if (!walletConnected || !walletAddress) {
       setScanError({
         error: 'Web3 wallet connection required. Please connect your wallet on the Portfolio page to enable scans.',
         code: 'CONNECTION_REQUIRED'
@@ -94,10 +116,18 @@ export default function TerminalDashboardPage() {
     setScanError(null);
     setActiveMessage(0);
     try {
+      const riskProfile = localStorage.getItem('dg_risk_profile') || 'balanced';
+      
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const customApiKey = localStorage.getItem('dg_sodex_api_key');
+      const customApiSecret = localStorage.getItem('dg_sodex_api_private_key');
+      if (customApiKey) headers['x-sodex-api-key'] = customApiKey;
+      if (customApiSecret) headers['x-sodex-api-private-key'] = customApiSecret;
+
       const response = await fetch('/api/terminal/agent/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress: addr })
+        headers,
+        body: JSON.stringify({ walletAddress, chainId: activeChainId, riskProfile })
       });
       const data = await response.json();
       if (!response.ok) {

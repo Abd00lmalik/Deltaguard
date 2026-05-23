@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { useAccount } from 'wagmi';
+import { useNetwork } from '@/lib/store/network-context';
 import { AlertTriangle, Check, CheckCircle, RefreshCw, X, XCircle, Activity, Database, TrendingUp, Shield } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { AgentReasoningPanel } from '@/components/agent/AgentReasoningPanel';
@@ -48,12 +51,36 @@ interface ScanData extends AgentReasoningOutput {
 
 export default function TerminalAgentPage() {
   const router = useRouter();
+  const { address: wagmiAddress, isConnected: wagmiConnected } = useAccount();
+  const { activeChainId } = useNetwork();
+
   const [scanData, setScanData] = useState<ScanData | null>(null);
   const [scanError, setScanError] = useState<{ error: string; code?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeMessage, setActiveMessage] = useState(0);
+  const [watchAddress, setWatchAddress] = useState<string>('');
 
-  async function runScan() {
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setWatchAddress(localStorage.getItem('dg_watch_address') || '');
+    }
+  }, []);
+
+  const walletAddress = wagmiConnected && wagmiAddress
+    ? wagmiAddress.toLowerCase()
+    : watchAddress || '';
+
+  const runScan = useCallback(async (overrideAddress?: string) => {
+    const activeAddr = overrideAddress || walletAddress;
+    if (!activeAddr) {
+      setScanError({
+        error: 'Web3 wallet connection required. Please connect your wallet on the Portfolio page to enable scans.',
+        code: 'CONNECTION_REQUIRED'
+      });
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setScanError(null);
     setScanData(null);
@@ -62,27 +89,41 @@ export default function TerminalAgentPage() {
     }, 600);
 
     try {
-      const walletAddress = typeof window !== 'undefined'
-        ? localStorage.getItem('dg_wallet_address') || null
-        : null;
+      const riskProfile = localStorage.getItem('dg_risk_profile') || 'balanced';
+      
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      const customApiKey = localStorage.getItem('dg_sodex_api_key');
+      const customApiSecret = localStorage.getItem('dg_sodex_api_private_key');
+      if (customApiKey) headers['x-sodex-api-key'] = customApiKey;
+      if (customApiSecret) headers['x-sodex-api-private-key'] = customApiSecret;
 
       const response = await fetch('/api/terminal/agent/scan', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress }),
+        headers,
+        body: JSON.stringify({ walletAddress: activeAddr, chainId: activeChainId, riskProfile }),
       });
       const data = await response.json();
-      // New agent route always returns 200 with capability data
-      setScanData(data as ScanData);
+      if (!response.ok) {
+        setScanError(data);
+      } else {
+        setScanData(data as ScanData);
+      }
     } catch {
       setScanError({ error: 'Network error — could not reach the scan endpoint.' });
     } finally {
       clearInterval(interval);
       setLoading(false);
     }
-  }
+  }, [walletAddress, activeChainId]);
 
-  useEffect(() => { void runScan(); }, []);
+  // Trigger scan when address or chainId changes
+  useEffect(() => {
+    if (walletAddress) {
+      void runScan(walletAddress);
+    } else {
+      setLoading(false);
+    }
+  }, [walletAddress, activeChainId, runScan]);
 
   const mode    = scanData?.mode    ?? 'setup_required';
   const caps    = scanData?.capabilities;
@@ -97,7 +138,7 @@ export default function TerminalAgentPage() {
             size="sm"
             variant="secondary"
             icon={<RefreshCw className="h-3.5 w-3.5" />}
-            onClick={runScan}
+            onClick={() => runScan()}
             loading={loading}
           >
             Re-scan
@@ -123,7 +164,18 @@ export default function TerminalAgentPage() {
               <div>
                 <p className="font-sora text-base font-bold text-white">Scan Failed</p>
                 <p className="mt-2 font-manrope text-sm text-text-secondary">{scanError.error}</p>
-                <PillButton size="sm" className="mt-4" onClick={runScan}>Retry</PillButton>
+                <div className="mt-4 flex gap-3">
+                  {scanError.code === 'CONNECTION_REQUIRED' ? (
+                    <Link
+                      href="/terminal/portfolio"
+                      className="inline-flex items-center gap-2 rounded-xl bg-accent-lime px-4 py-2.5 font-manrope text-sm font-semibold text-neutral-950 transition-colors hover:bg-accent-lime/90"
+                    >
+                      Connect Wallet
+                    </Link>
+                  ) : (
+                    <PillButton size="sm" onClick={() => runScan()}>Retry</PillButton>
+                  )}
+                </div>
               </div>
             </div>
           </GlowCard>
@@ -328,7 +380,7 @@ ${scanData.decisionRule || 'No specific decision rule applied.'}`}
                   <PillButton size="sm" onClick={() => router.push('/terminal/diagnostics')}>
                     Open Diagnostics
                   </PillButton>
-                  <PillButton size="sm" variant="secondary" onClick={runScan}>
+                  <PillButton size="sm" variant="secondary" onClick={() => runScan()}>
                     Retry Scan
                   </PillButton>
                 </div>

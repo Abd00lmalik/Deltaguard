@@ -44,7 +44,9 @@ async function checkSoDEXPublicHealth(): Promise<{ available: boolean; httpStatu
   }
 }
 
-async function handler() {
+async function handler(request: Request) {
+  const headerApiKey = request.headers.get('x-sodex-api-key') || process.env.SODEX_API_KEY;
+  const headerApiPrivateKey = request.headers.get('x-sodex-api-private-key') || process.env.SODEX_API_PRIVATE_KEY;
   const [sosoResult, ssiResult, sodexResult, deribitResult, hyperliquidResult] = await Promise.allSettled([
     getSoSoValueData(),
     fetchSSIData(process.env.SODEX_ACCOUNT_ADDRESS ?? null),
@@ -100,7 +102,7 @@ async function handler() {
     },
     sodexSigned: {
       accountId:              'DYNAMIC (Fetched per user)',
-      credentialsPresent:     Boolean(process.env.SODEX_API_PRIVATE_KEY && process.env.SODEX_API_KEY),
+      credentialsPresent:     Boolean(headerApiPrivateKey && headerApiKey),
     },
     deribit: {
       available:         deribitData?.source === 'live',
@@ -131,5 +133,5 @@ async function handler() {
   }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
-export const GET = withTelemetry('/api/terminal/diagnostics', handler as Parameters<typeof withTelemetry>[1]);
+export const GET = withTelemetry('/api/terminal/diagnostics', handler);
 export const dynamic = 'force-dynamic';
