@@ -20,7 +20,7 @@ export function useWalletPortfolio() {
   const { address: wagmiAddress, isConnected: wagmiConnected, chainId: wagmiChainId } = useAccount();
   const { connect } = useConnect();
   const { disconnect } = useDisconnect();
-  const { isTestnet, activeChainId } = useNetwork();
+  const { activeChainId } = useNetwork();
 
   // ── Watch-only address overlay (paste-to-watch mode) ─────────────────────
   const [watchAddress, setWatchAddress] = useState<string>('');

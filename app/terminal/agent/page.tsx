@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAccount } from 'wagmi';
 import { useNetwork } from '@/lib/store/network-context';
-import { AlertTriangle, Check, CheckCircle, RefreshCw, X, XCircle, Activity, Database, TrendingUp, Shield } from 'lucide-react';
+import { AlertTriangle, CheckCircle, RefreshCw, X, XCircle, Activity, Database, TrendingUp, Shield } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { AgentReasoningPanel } from '@/components/agent/AgentReasoningPanel';
 import { HedgeProposalCard } from '@/components/agent/HedgeProposalCard';
@@ -17,16 +17,15 @@ import { SectionLabel } from '@/components/ui/SectionLabel';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import type { AgentReasoningOutput } from '@/types/agent';
 import type { AgentCapabilities, AgentMode } from '@/lib/agent/capabilities';
+import type { DecisionArtifact } from '@/lib/agent/types';
 import type { SSIResult } from '@/lib/integrations/ssi/server-client';
 import type { MarketSignal } from '@/types/signals';
 
-const MODE_LABELS: Record<AgentMode, { label: string; color: string }> = {
-  full:                { label: 'Full Analysis',         color: 'text-accent-lime' },
-  execution_prep:      { label: 'Execution Prep',        color: 'text-accent-lime' },
-  market_intelligence: { label: 'Market Intelligence',   color: 'text-amber-400' },
-  market_and_execution:{ label: 'Market + Execution',    color: 'text-amber-400' },
-  portfolio_only:      { label: 'Portfolio Only',        color: 'text-amber-400' },
-  degraded:            { label: 'Degraded',              color: 'text-red-400' },
+const MODE_LABELS: Record<AgentMode | 'setup_required', { label: string; color: string }> = {
+  automated_hedging:   { label: 'Automated Hedging',     color: 'text-accent-lime' },
+  advisory_hedge:      { label: 'Advisory Hedge',        color: 'text-accent-lime' },
+  monitoring_only:     { label: 'Monitoring Only',       color: 'text-amber-400' },
+  manual:              { label: 'Manual Configuration',  color: 'text-neutral-500' },
   setup_required:      { label: 'Setup Required',        color: 'text-neutral-500' },
 };
 
@@ -47,6 +46,7 @@ interface ScanData extends AgentReasoningOutput {
   errors?: string[];
   portfolioExposure?: SSIResult | null;
   signals?: MarketSignal[];
+  decisionArtifact?: DecisionArtifact;
 }
 
 export default function TerminalAgentPage() {
@@ -127,7 +127,7 @@ export default function TerminalAgentPage() {
 
   const mode    = scanData?.mode    ?? 'setup_required';
   const caps    = scanData?.capabilities;
-  const modeInfo = MODE_LABELS[mode as AgentMode] ?? MODE_LABELS.degraded;
+  const modeInfo = MODE_LABELS[mode];
 
   return (
     <>
@@ -194,7 +194,7 @@ export default function TerminalAgentPage() {
                   )}
                 </div>
                 <StatusBadge
-                  variant={mode === 'full' || mode === 'execution_prep' ? 'safe' : mode === 'setup_required' ? 'danger' : 'warning'}
+                  variant={mode === 'automated_hedging' || mode === 'advisory_hedge' ? 'safe' : (mode === 'setup_required' || mode === 'manual') ? 'danger' : 'warning'}
                   label={modeInfo.label}
                 />
               </div>
@@ -268,104 +268,94 @@ export default function TerminalAgentPage() {
             )}
 
             {/* Agent reasoning output — only shown when market data is available */}
-            {caps?.marketIntelligence && (
-              <>
-                <AgentReasoningPanel>
-                  <h2 className="font-sora text-base font-bold text-white">Signal Input Context</h2>
-                  <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    {[
-                      ['Composite Score', `${scanData.compositeScore ?? 0}`],
-                      ['Portfolio Net Delta', `${scanData.portfolioDelta?.toFixed(2) ?? '0.00'}`],
-                      ['Signals Analyzed', `${scanData.signals?.length ?? 0}`],
-                      ['Confidence Level', `${scanData.confidence ?? 0}%`],
-                      ['Requires Confirmation', scanData.requiresConfirmation ? 'YES' : 'NO'],
-                      ['Decision', (scanData.decision ?? 'watch').toUpperCase()]
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
-                        <p className="font-manrope text-[10px] font-bold uppercase tracking-[0.16em] text-text-muted">{label}</p>
-                        <p className="mt-2 font-sora text-lg font-bold text-white">{value}</p>
+            {caps?.marketIntelligence && scanData.decisionArtifact && (
+              <div className="space-y-6">
+                <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
+                  <div className="space-y-6">
+                    {/* Action Header — constructed from real values */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/[0.06] pb-4">
+                      <div className="flex items-center gap-3">
+                        <span className={`rounded-lg px-2.5 py-1 font-manrope text-[10px] font-bold uppercase tracking-wider ${
+                          scanData.decisionArtifact.action === 'hedge' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                          scanData.decisionArtifact.action === 'monitor' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-neutral-800 text-text-muted'
+                        }`}>
+                          {scanData.decisionArtifact.action.toUpperCase()}
+                        </span>
+                        <div>
+                          <p className="text-white font-sora text-base font-bold">
+                            {scanData.decisionArtifact.action === "hedge" && scanData.decisionArtifact.instrument
+                              ? `Open ${scanData.decisionArtifact.direction?.toUpperCase()} ${scanData.decisionArtifact.instrument}`
+                              : scanData.decisionArtifact.action === "monitor"
+                              ? "Monitor — No Action Required"
+                              : "Insufficient Data for Decision"}
+                          </p>
+                          <p className="text-neutral-500 text-xs font-manrope mt-0.5">
+                            Confidence: {scanData.decisionArtifact.confidence}% · {scanData.decisionArtifact.inputs.activeSignals}/{scanData.decisionArtifact.inputs.totalSignals} signals active
+                          </p>
+                        </div>
                       </div>
-                    ))}
-                  </div>
-                </AgentReasoningPanel>
-
-                <AgentReasoningPanel>
-                  <h2 className="font-sora text-base font-bold text-white">Agent Reasoning Trace</h2>
-                  <div className="mt-5 space-y-3">
-                    {scanData.reasoningSteps?.map((step, index) => (
-                      <div key={step} className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.025] p-4">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-lime font-mono text-xs font-bold text-black">
-                          {index + 1}
-                        </div>
-                        <p className="flex-1 font-manrope text-sm leading-6 text-white">
-                          {step}
-                        </p>
-                        <Check className="h-4 w-4 shrink-0 text-accent-lime" />
+                      <div className="text-left font-manrope text-xs text-text-muted bg-white/[0.02] border border-white/[0.04] rounded-lg px-3 py-1.5 self-start md:self-auto">
+                        Mode: <span className="font-bold text-white capitalize">{scanData.decisionArtifact.agentMode.replace('_', ' ')}</span>
                       </div>
-                    ))}
+                    </div>
+
+                    {/* Sizing — only shown when action is hedge */}
+                    {scanData.decisionArtifact.action === "hedge" && scanData.decisionArtifact.sizeUsd !== null && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
+                          <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-manrope">Hedge Notional</span>
+                          <p className="mt-1 font-sora text-lg font-bold text-white">
+                            ${scanData.decisionArtifact.sizeUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
+                          <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-manrope">Leverage Limit</span>
+                          <p className="mt-1 font-sora text-lg font-bold text-white">{scanData.decisionArtifact.leverage}×</p>
+                        </div>
+                        <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-4">
+                          <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider font-manrope">Order Direction</span>
+                          <p className="mt-1 font-sora text-lg font-bold text-white">{scanData.decisionArtifact.direction?.toUpperCase() ?? "—"}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reason Array — every entry is data-derived */}
+                    <div className="space-y-3 pt-2">
+                      <p className="text-text-muted text-xs font-bold font-manrope uppercase tracking-widest">Decision Factors</p>
+                      <div className="space-y-3">
+                        {scanData.decisionArtifact.reason.map((r, i) => (
+                          <div key={i} className="flex gap-4 text-sm border-l-2 border-accent-lime pl-4 py-2 bg-white/[0.01] rounded-r-xl border border-white/[0.03] border-l-0 pr-4">
+                            <div className="flex-1">
+                              <p className="text-white font-sora text-sm font-bold">{r.factor}</p>
+                              <p className="text-text-secondary text-xs mt-1.5 font-manrope leading-5">{r.observation}</p>
+                            </div>
+                            <div className="text-xs text-text-muted font-mono whitespace-nowrap self-center bg-white/[0.03] px-2.5 py-1 rounded-lg border border-white/[0.05]">
+                              {(r.weight * 100).toFixed(0)}% weight
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Input Snapshot — full audit trail */}
+                    <details className="text-xs text-neutral-500 pt-4 border-t border-white/[0.06] cursor-pointer">
+                      <summary className="font-manrope hover:text-neutral-300 select-none">Audit Trail: live inputs snapshot</summary>
+                      <pre className="mt-3 font-mono text-xs overflow-auto p-4 bg-black/40 rounded-xl border border-white/5 text-text-secondary">
+                        {JSON.stringify(scanData.decisionArtifact.inputs, null, 2)}
+                      </pre>
+                    </details>
                   </div>
-                </AgentReasoningPanel>
+                </GlowCard>
 
-                <AgentReasoningPanel>
-                  <h2 className="font-sora text-base font-bold text-white">Decision Logic</h2>
-                  <pre className="mt-5 overflow-x-auto rounded-xl border border-white/[0.06] bg-surface-1 p-5 font-mono text-xs leading-6 text-text-secondary">
-{`RULE SET - DeltaGuard AI v1.0 (Deterministic Engine)
-
-${scanData.decisionRule || 'No specific decision rule applied.'}`}
-                  </pre>
-                </AgentReasoningPanel>
-
-                <AgentReasoningPanel>
-                  <h2 className="mb-5 font-sora text-base font-bold text-white">Hedge Recommendation</h2>
-                  <HedgeProposalCard output={scanData} full />
-                </AgentReasoningPanel>
-
-                {scanData.reasoningNarrative && scanData.reasoningNarrative.length > 0 && (
+                {scanData.decision === 'hedge' && (
                   <AgentReasoningPanel>
-                    <h2 className="font-sora text-base font-bold text-white">Rationale Narrative</h2>
-                    <div className="mt-4 space-y-4">
-                      {scanData.reasoningNarrative.map((paragraph, i) => (
-                        <p key={i} className="font-manrope text-sm leading-7 text-text-secondary">
-                          {paragraph}
-                        </p>
-                      ))}
-                    </div>
-                  </AgentReasoningPanel>
-                )}
-
-                {scanData.warnings && scanData.warnings.length > 0 && (
-                  <AgentReasoningPanel>
-                    <div className="flex items-center gap-3">
-                      <h2 className="font-sora text-base font-bold text-white">Risk Warnings</h2>
-                      <StatusBadge variant="warning" label="Risk Disclosure" />
-                    </div>
-                    <div className="mt-5 space-y-3">
-                      {scanData.warnings.map((warning) => (
-                        <div key={warning} className="flex gap-3 rounded-xl bg-warning-dim p-3">
-                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                          <p className="font-manrope text-sm leading-6 text-text-secondary">{warning}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </AgentReasoningPanel>
-                )}
-
-                {scanData.refusals && scanData.refusals.length > 0 && (
-                  <AgentReasoningPanel>
-                    <h2 className="font-sora text-base font-bold text-white">Agent Constraints</h2>
-                    <div className="mt-5 space-y-3">
-                      {scanData.refusals.map((refusal) => (
-                        <div key={refusal} className="flex gap-3 rounded-xl bg-danger-dim p-3">
-                          <X className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
-                          <p className="font-manrope text-sm leading-6 text-text-secondary">{refusal}</p>
-                        </div>
-                      ))}
-                    </div>
+                    <h2 className="mb-5 font-sora text-base font-bold text-white">Execution Ticket Proposed</h2>
+                    <HedgeProposalCard output={scanData} full />
                   </AgentReasoningPanel>
                 )}
 
                 <DecisionRuleCard />
-              </>
+              </div>
             )}
 
             {/* Market unavailable state */}

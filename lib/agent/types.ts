@@ -36,78 +36,65 @@ components/dashboard/PortfolioOverview.tsx:15:import type { PortfolioSnapshot } 
 components/dashboard/PortfolioOverview.tsx:32:  const [chartData, setChartData] = useState<ChartPoint[]>([]);
 */
 
-import { db } from "@/lib/db";
-import type { PortfolioHistoryPoint, PortfolioHistoryResponse } from "@/lib/types/portfolio-history";
+export type AgentMode = "automated_hedging" | "advisory_hedge" | "monitoring_only" | "manual";
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const address = searchParams.get("address");
-  const range   = (searchParams.get("range") ?? "7d") as "1d" | "7d" | "30d";
+export type AgentCapabilities = {
+  marketIntelligence: boolean;
+  portfolioExposure: boolean;
+  executionVenue: boolean;
+  signedExecution: boolean;
+  accountInitialized: boolean;
+};
 
-  if (!address) {
-    return Response.json({ error: "address required" }, { status: 400 });
-  }
+export type DecisionArtifact = {
+  // What action to take
+  action: "hedge" | "reduce_exposure" | "rebalance" | "monitor" | "no_action";
 
-  const rangeMs: Record<string, number> = {
-    "1d":  1  * 24 * 60 * 60 * 1000,
-    "7d":  7  * 24 * 60 * 60 * 1000,
-    "30d": 30 * 24 * 60 * 60 * 1000,
-  };
+  // The specific instrument for the recommended action (null if action is monitor/no_action)
+  instrument: string | null;         // e.g. "BTC-PERP", "ETH-PERP", null
 
-  const rangeEnd   = Date.now();
-  const rangeStart = rangeEnd - (rangeMs[range] ?? rangeMs["7d"]);
+  // The recommended notional position size in USD (null if no trade recommended)
+  sizeUsd: number | null;
 
-  // Query real stored snapshots from database
-  // These are written every time a portfolio scan resolves successfully
-  let points: PortfolioHistoryPoint[] = [];
-  let source: PortfolioHistoryResponse["source"] = "unavailable";
+  // Leverage to apply (enforced through policy framework — max 3x)
+  leverage: number | null;
 
-  try {
-    const rows = await db.query(`
-      SELECT snapshot_timestamp_ms, total_usd_value
-      FROM portfolio_snapshots
-      WHERE wallet_address = $1
-        AND snapshot_timestamp_ms >= $2
-        AND snapshot_timestamp_ms <= $3
-      ORDER BY snapshot_timestamp_ms ASC
-    `, [address.toLowerCase(), rangeStart, rangeEnd]);
+  // Direction of the trade
+  direction: "short" | "long" | null;
 
-    points = rows.rows.map(row => ({
-      timestampMs:   Number(row.snapshot_timestamp_ms),
-      totalUsdValue: row.total_usd_value !== null ? Number(row.total_usd_value) : null,
-      source:        "indexed" as const,
-    }));
+  // Confidence in this decision (0-100, derived from signal coverage and weights)
+  confidence: number;
 
-    source = "database";
-  } catch (e) {
-    // Database unavailable — return empty, not mock data
-    return Response.json({
-      points: [],
-      resolution: "1h",
-      rangeStart, rangeEnd,
-      source: "unavailable",
-      error: String(e),
-    } satisfies PortfolioHistoryResponse);
-  }
+  // Structured reason array — each entry is a fact derived from real data
+  // No pre-written strings. Every entry is constructed from live values.
+  reason: DecisionReason[];
 
-  // If no historical rows exist yet (new wallet), return empty — no interpolation
-  if (points.length === 0) {
-    return Response.json({
-      points: [],
-      resolution: "1h",
-      rangeStart, rangeEnd,
-      source: "unavailable",
-      error: null,
-    } satisfies PortfolioHistoryResponse);
-  }
+  // The exact input state that produced this decision — full audit trail
+  inputs: DecisionInputSnapshot;
 
-  return Response.json({
-    points,
-    resolution: "1h",
-    rangeStart, rangeEnd,
-    source,
-    error: null,
-  } satisfies PortfolioHistoryResponse);
-}
+  // ISO timestamp of when this artifact was generated
+  generatedAt: string;
 
-export const dynamic = 'force-dynamic';
+  // Which agent mode produced this (from capabilities model)
+  agentMode: AgentMode;
+};
+
+export type DecisionReason = {
+  factor: string;          // Which signal or data point drove this reason
+  observation: string;     // What the data showed — constructed from real values
+  weight: number;          // How much this factor contributed (0-1)
+  value: number | null;    // The raw signal value that triggered this reason
+};
+
+export type DecisionInputSnapshot = {
+  compositeSignalScore:   number | null;
+  portfolioValueUsd:      number | null;
+  btcCorrelatedExposure:  number | null;
+  portfolioBetaToBTC:     number | null;
+  portfolioVolatility:    number | null;
+  aaveHealthFactor:       number | null;
+  stablecoinConcentration: number | null;
+  activeSignals:          number;
+  totalSignals:           number;
+  signalCoverage:         number;  // activeSignals / totalSignals
+};

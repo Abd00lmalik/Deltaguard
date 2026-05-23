@@ -84,8 +84,12 @@ export function PortfolioTable() {
                   </td>
                   <td className="px-4 py-4 font-mono text-xs uppercase text-text-secondary">{asset.class}</td>
                   <td className="px-4 py-4 font-mono text-sm text-text-secondary">{formatNumber(asset.amount, asset.amount < 1 ? 2 : 1)}</td>
-                  <td className="px-4 py-4 font-mono text-sm text-text-secondary">{formatCurrency(asset.priceUsd, asset.priceUsd < 10 ? 2 : 0)}</td>
-                  <td className="px-4 py-4 font-mono text-sm font-semibold text-white">{formatCurrency(asset.valueUsd)}</td>
+                  <td className="px-4 py-4 font-mono text-sm text-text-secondary">
+                    {asset.priceUsd !== null ? formatCurrency(asset.priceUsd, asset.priceUsd < 10 ? 2 : 0) : 'Price unavailable'}
+                  </td>
+                  <td className="px-4 py-4 font-mono text-sm font-semibold text-white">
+                    {asset.valueUsd !== null ? formatCurrency(asset.valueUsd) : 'Value unavailable'}
+                  </td>
                   <td className={cn('px-4 py-4 font-mono text-sm font-bold', deltaClass(asset.delta))}>{asset.delta.toFixed(2)}</td>
                   <td className={cn('px-4 py-4 font-mono text-sm', asset.volatility30d > 80 ? 'text-danger' : 'text-text-secondary')}>
                     {formatPercent(asset.volatility30d)}

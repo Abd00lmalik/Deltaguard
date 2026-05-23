@@ -1,3 +1,41 @@
+/*
+AUDIT RESULTS:
+1. Hardcoded pricing:
+lib/mock/portfolio.ts:75:    priceUsd: 1.0,
+
+2. Mock reasoning:
+app/api/terminal/agent/scan/route.ts:4: * Does not fall back to mock data silently.
+app/api/terminal/agent/scan/route.ts:5: * If all sources fail, returns structured error — never mock values.
+lib/agent/decision-engine.ts:64:            'BTC/USDT Perp is selected as the highest beta-weight hedge vehicle for the mock portfolio.'
+lib/agent/decision-engine.ts:86:      'Slippage estimate: 0.08% based on simulated SoDEX depth.',
+lib/agent/decision-engine.ts:95:      'Simulated execution may differ from real market conditions.',
+lib/agent/reasoning-engine.ts:6:      `The composite signal score of ${output.compositeScore} places the market in a risk-off regime. Multiple mock SoSoValue-style inputs are pointing in the same direction: ETF outflows, macro pressure, volatility expansion, and weakening SSI momentum.`,
+lib/agent/reasoning-engine.ts:8:      `The recommendation requires user approval before any simulated execution can occur. DeltaGuard AI never auto-executes, never touches real funds, and never presents mock execution as live trading.`
+lib/agent/reasoning-engine.ts:16:      'No simulated order is created unless the hedge threshold and portfolio delta rules are both satisfied.'
+
+3. Architecture route:
+app/integrations/page.tsx:47:      <Topbar title="System Architecture" />
+app/integrations/page.tsx:51:          <h1 className="mt-3 font-sora text-2xl font-bold text-white">System Architecture</h1>
+components/layout/Sidebar.tsx:52:    { label: 'Architecture', href: '/integrations', icon: Layers },
+
+4. Signal pipeline gaps:
+lib/integrations/sosovalue/normalizer.ts:174:  // Options Skew signal from Deribit (new signal)
+lib/integrations/sosovalue/normalizer.ts:177:  let optionsSkewSource: SignalSource = 'unavailable';
+lib/integrations/sosovalue/normalizer.ts:180:    // Positive skew = puts more expensive = bearish demand = negative signal
+lib/integrations/sosovalue/normalizer.ts:189:  // Orderbook Imbalance signal from Hyperliquid (new signal)
+lib/integrations/sosovalue/normalizer.ts:192:  let obImbalanceSource: SignalSource = 'unavailable';
+lib/integrations/sosovalue/normalizer.ts:195:    // Positive ratio = buy-side dominant = bullish = positive signal
+
+5. Chart data binding:
+app/api/terminal/portfolio/history/route.ts:2:import { getPortfolioSnapshots, type PortfolioSnapshot } from '@/lib/storage/portfolio-history';
+app/api/terminal/portfolio/history/route.ts:4:import { getHistoricalPrices, getCoinGeckoId } from '@/lib/providers/price-feed';
+app/api/terminal/portfolio/history/route.ts:20:  // If we have fewer than 7 snapshots, let's reconstruct the historical 7-day trend to avoid a blank or tiny chart!
+components/dashboard/PortfolioOverview.tsx:6:  AreaChart,
+components/dashboard/PortfolioOverview.tsx:12:} from 'recharts';
+components/dashboard/PortfolioOverview.tsx:15:import type { PortfolioSnapshot } from '@/lib/storage/portfolio-history';
+components/dashboard/PortfolioOverview.tsx:32:  const [chartData, setChartData] = useState<ChartPoint[]>([]);
+*/
+
 /**
  * DeltaGuard AI — On-Chain Portfolio Resolver
  * Dynamically routes to the correct chain via chainId.
@@ -8,7 +46,7 @@
 import { createPublicClient, http, formatUnits, erc20Abi } from 'viem';
 import { mainnet, base, optimism, sepolia } from 'viem/chains';
 import type { Chain } from 'viem';
-import { getTokenPricesUsd } from '@/lib/providers/price-feed';
+import { resolveTokenPrice } from '@/lib/indexer/price-resolver';
 import { CHAIN_CONFIGS } from '@/lib/web3/chains';
 import type { PortfolioAsset, AssetClass } from '@/types/portfolio';
 
@@ -187,16 +225,32 @@ export async function getOnChainPortfolio(address: string, chainId?: number): Pr
     tokenList = FALLBACK_TOKENS[activeChainId] ?? [];
   }
 
-  // Gather all unique symbols for price fetching
-  const allSymbols = ['ETH', ...tokenList.map(t => t.symbol)];
-  const livePrices = await getTokenPricesUsd(allSymbols);
+  // Resolve prices in parallel using price-resolver
+  const pricePromises = [
+    resolveTokenPrice('0x0000000000000000000000000000000000000000', activeChainId, 'ETH').then(res => ({ symbol: 'ETH', priceUsd: res.priceUsd })),
+    ...tokenList.map(async (t) => {
+      const res = await resolveTokenPrice(t.address, activeChainId, t.symbol);
+      return { symbol: t.symbol, priceUsd: res.priceUsd };
+    })
+  ];
+
+  let livePrices: Record<string, number | null> = {};
+  try {
+    const resolvedPrices = await Promise.all(pricePromises);
+    livePrices = resolvedPrices.reduce((acc, curr) => {
+      acc[curr.symbol] = curr.priceUsd;
+      return acc;
+    }, {} as Record<string, number | null>);
+  } catch (err) {
+    console.warn('[DeltaGuard] Parallel price resolution failed, using fallback:', err);
+  }
 
   try {
     // 1. Native ETH/chain-native balance
     const nativeBalance = await publicClient.getBalance({ address: address as `0x${string}` });
     const ethAmount = Number(formatUnits(nativeBalance, 18));
-    const ethPriceUsd = livePrices['ETH'] ?? 0;
-    const ethValueUsd = ethAmount * ethPriceUsd;
+    const ethPriceUsd = livePrices['ETH'] ?? null;
+    const ethValueUsd = ethPriceUsd !== null ? ethAmount * ethPriceUsd : null;
 
     if (ethAmount > 0.000001) {
       assets.push({
@@ -212,7 +266,9 @@ export async function getOnChainPortfolio(address: string, chainId?: number): Pr
         riskContribution: 0,
         allocation: 0,
       });
-      totalValueUsd += ethValueUsd;
+      if (ethValueUsd !== null) {
+        totalValueUsd += ethValueUsd;
+      }
     }
 
     // 2. ERC-20 balances (Alchemy-discovered or static)
@@ -237,8 +293,8 @@ export async function getOnChainPortfolio(address: string, chainId?: number): Pr
     for (const { token, balance } of tokenBalances) {
       const amount = Number(formatUnits(balance, token.decimals));
       if (amount > 0.0001) {
-        const priceUsd = livePrices[token.symbol] ?? 1;
-        const valueUsd = amount * priceUsd;
+        const priceUsd = livePrices[token.symbol] ?? null;
+        const valueUsd = priceUsd !== null ? amount * priceUsd : null;
         assets.push({
           id: `erc20-${token.symbol.toLowerCase()}-${activeChainId}`,
           symbol: token.symbol,
@@ -252,19 +308,32 @@ export async function getOnChainPortfolio(address: string, chainId?: number): Pr
           riskContribution: 0,
           allocation: 0,
         });
-        totalValueUsd += valueUsd;
+        if (valueUsd !== null) {
+          totalValueUsd += valueUsd;
+        }
       }
     }
 
     // 3. Compute allocations and risk contributions
     if (totalValueUsd > 0) {
       for (const asset of assets) {
-        asset.allocation = (asset.valueUsd / totalValueUsd) * 100;
-        asset.riskContribution = asset.delta * (asset.valueUsd / totalValueUsd);
+        if (asset.valueUsd !== null) {
+          asset.allocation = (asset.valueUsd / totalValueUsd) * 100;
+          asset.riskContribution = asset.delta * (asset.valueUsd / totalValueUsd);
+        } else {
+          asset.allocation = 0;
+          asset.riskContribution = 0;
+        }
       }
     }
 
-    return assets.sort((a, b) => b.valueUsd - a.valueUsd); // Sort by value desc
+    return assets.sort((a, b) => {
+      // Tokens with resolved USD values rank above those without
+      if (a.valueUsd !== null && b.valueUsd === null) return -1;
+      if (a.valueUsd === null && b.valueUsd !== null) return 1;
+      if (a.valueUsd !== null && b.valueUsd !== null) return b.valueUsd - a.valueUsd;
+      return b.amount - a.amount;
+    }); // Sort by value desc
   } catch (err) {
     console.error('[DeltaGuard] Error fetching on-chain portfolio:', err);
     throw new Error(`Failed to read on-chain balances on chain ${activeChainId} via RPC.`);

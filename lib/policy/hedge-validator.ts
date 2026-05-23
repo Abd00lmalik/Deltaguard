@@ -36,78 +36,41 @@ components/dashboard/PortfolioOverview.tsx:15:import type { PortfolioSnapshot } 
 components/dashboard/PortfolioOverview.tsx:32:  const [chartData, setChartData] = useState<ChartPoint[]>([]);
 */
 
-import { db } from "@/lib/db";
-import type { PortfolioHistoryPoint, PortfolioHistoryResponse } from "@/lib/types/portfolio-history";
+export type ProposedHedgeOrder = {
+  pair: string;
+  size: number;
+  leverage: number;
+  direction: "short" | "long";
+  maxSlippage: number;
+  expiry: number;
+};
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const address = searchParams.get("address");
-  const range   = (searchParams.get("range") ?? "7d") as "1d" | "7d" | "30d";
-
-  if (!address) {
-    return Response.json({ error: "address required" }, { status: 400 });
-  }
-
-  const rangeMs: Record<string, number> = {
-    "1d":  1  * 24 * 60 * 60 * 1000,
-    "7d":  7  * 24 * 60 * 60 * 1000,
-    "30d": 30 * 24 * 60 * 60 * 1000,
+export type PolicyValidationResult = {
+  isValid: boolean;
+  enforced: {
+    size: number;
+    leverage: number;
   };
+  reason?: string;
+};
 
-  const rangeEnd   = Date.now();
-  const rangeStart = rangeEnd - (rangeMs[range] ?? rangeMs["7d"]);
+export function validateAndEnforceHedgePolicy(
+  proposed: ProposedHedgeOrder,
+  portfolioValueUsd: number
+): PolicyValidationResult {
+  // Enforce Max Leverage Limit: 3x
+  const enforcedLeverage = Math.min(proposed.leverage, 3);
 
-  // Query real stored snapshots from database
-  // These are written every time a portfolio scan resolves successfully
-  let points: PortfolioHistoryPoint[] = [];
-  let source: PortfolioHistoryResponse["source"] = "unavailable";
+  // Enforce Max Size Limit: 25% of portfolio value
+  const maxSizeLimit = portfolioValueUsd * 0.25;
+  const enforcedSize = Math.min(proposed.size, maxSizeLimit);
 
-  try {
-    const rows = await db.query(`
-      SELECT snapshot_timestamp_ms, total_usd_value
-      FROM portfolio_snapshots
-      WHERE wallet_address = $1
-        AND snapshot_timestamp_ms >= $2
-        AND snapshot_timestamp_ms <= $3
-      ORDER BY snapshot_timestamp_ms ASC
-    `, [address.toLowerCase(), rangeStart, rangeEnd]);
-
-    points = rows.rows.map(row => ({
-      timestampMs:   Number(row.snapshot_timestamp_ms),
-      totalUsdValue: row.total_usd_value !== null ? Number(row.total_usd_value) : null,
-      source:        "indexed" as const,
-    }));
-
-    source = "database";
-  } catch (e) {
-    // Database unavailable — return empty, not mock data
-    return Response.json({
-      points: [],
-      resolution: "1h",
-      rangeStart, rangeEnd,
-      source: "unavailable",
-      error: String(e),
-    } satisfies PortfolioHistoryResponse);
-  }
-
-  // If no historical rows exist yet (new wallet), return empty — no interpolation
-  if (points.length === 0) {
-    return Response.json({
-      points: [],
-      resolution: "1h",
-      rangeStart, rangeEnd,
-      source: "unavailable",
-      error: null,
-    } satisfies PortfolioHistoryResponse);
-  }
-
-  return Response.json({
-    points,
-    resolution: "1h",
-    rangeStart, rangeEnd,
-    source,
-    error: null,
-  } satisfies PortfolioHistoryResponse);
+  return {
+    isValid: proposed.leverage <= 3 && proposed.size <= maxSizeLimit,
+    enforced: {
+      size: Number(enforcedSize.toFixed(2)),
+      leverage: enforcedLeverage,
+    },
+    reason: proposed.leverage > 3 ? "Leverage capped at 3x policy limit" : undefined,
+  };
 }
-
-export const dynamic = 'force-dynamic';
