@@ -271,24 +271,8 @@ export async function getOnChainPortfolio(address: string, chainId?: number): Pr
       }
     }
 
-    // 2. ERC-20 balances (Alchemy-discovered or static)
-    // If Alchemy discovery was used, balances are already non-zero;
-    // if static list, we still need to check on-chain.
-    const tokenBalances = await Promise.all(
-      tokenList.map(async (token) => {
-        try {
-          const balance = await publicClient.readContract({
-            address: token.address,
-            abi: erc20Abi,
-            functionName: 'balanceOf',
-            args: [address as `0x${string}`],
-          });
-          return { token, balance };
-        } catch {
-          return { token, balance: 0n };
-        }
-      })
-    );
+    // 2. ERC-20 balances (Alchemy-discovered or static) using multicall
+    const tokenBalances = await getTokenBalancesMulticall(publicClient, tokenList, address);
 
     for (const { token, balance } of tokenBalances) {
       const amount = Number(formatUnits(balance, token.decimals));
@@ -337,5 +321,53 @@ export async function getOnChainPortfolio(address: string, chainId?: number): Pr
   } catch (err) {
     console.error('[DeltaGuard] Error fetching on-chain portfolio:', err);
     throw new Error(`Failed to read on-chain balances on chain ${activeChainId} via RPC.`);
+  }
+}
+
+/**
+ * Fetches multiple token balances in a single multicall query.
+ * Falls back to sequential calls if the RPC does not support multicall or fails.
+ */
+export async function getTokenBalancesMulticall(
+  publicClient: ReturnType<typeof createPublicClient>,
+  tokenList: TokenEntry[],
+  address: string
+): Promise<Array<{ token: TokenEntry; balance: bigint }>> {
+  if (tokenList.length === 0) return [];
+
+  try {
+    const contracts = tokenList.map((token) => ({
+      address: token.address,
+      abi: erc20Abi,
+      functionName: 'balanceOf',
+      args: [address as `0x${string}`],
+    } as const));
+
+    const results = await publicClient.multicall({
+      contracts,
+    });
+
+    return tokenList.map((token, index) => {
+      const res = results[index];
+      const balance = res?.status === 'success' ? (res.result as bigint) : 0n;
+      return { token, balance };
+    });
+  } catch (err) {
+    console.warn('[DeltaGuard] Multicall failed, falling back to sequential calls:', err);
+    return Promise.all(
+      tokenList.map(async (token) => {
+        try {
+          const balance = await publicClient.readContract({
+            address: token.address,
+            abi: erc20Abi,
+            functionName: 'balanceOf',
+            args: [address as `0x${string}`],
+          });
+          return { token, balance };
+        } catch {
+          return { token, balance: 0n };
+        }
+      })
+    );
   }
 }

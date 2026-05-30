@@ -4,6 +4,8 @@ export type OrderStatus =
   | 'submitted'
   | 'accepted'
   | 'filled'
+  | 'partially-filled'
+  | 'failed'
   | 'cancelled';
 
 export interface OrderTimelineStep {

@@ -15,6 +15,7 @@
     "@types/node": "^22.15.3",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "@vercel/kv": "^3.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "ethers": "^6.16.0",
@@ -27,7 +28,8 @@
     "recharts": "^2.15.3",
     "tailwind-merge": "^3.2.0",
     "viem": "^2.50.4",
-    "wagmi": "^2.19.5"
+    "wagmi": "^2.19.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",

@@ -9,6 +9,7 @@
  */
 
 import type { SignalSource, ProviderHealth, ProviderError } from '@/lib/types/signal-source';
+import { fetchWithRetry } from '@/lib/utils/fetch-with-retry';
 
 export interface NewsItem {
   id: string;
@@ -59,33 +60,7 @@ let lastResult: SoSoValueFetchResult | null = null;
 let lastFetchAt: number = 0;
 const CACHE_TTL_MS = 30_000;
 
-async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 2, initialDelay = 800): Promise<Response> {
-  let delay = initialDelay;
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      const res = await fetch(url, options);
-      if (res.status === 429 || res.status === 503) {
-        let retryAfter = delay;
-        const retryAfterHeader = res.headers.get('retry-after');
-        if (retryAfterHeader) {
-          const seconds = parseInt(retryAfterHeader, 10);
-          if (!isNaN(seconds)) {
-            retryAfter = seconds * 1000;
-          }
-        }
-        await new Promise((resolve) => setTimeout(resolve, retryAfter));
-        delay *= 2;
-        continue;
-      }
-      return res;
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay *= 2;
-    }
-  }
-  return fetch(url, options);
-}
+// The shared fetchWithRetry is imported from @/lib/utils/fetch-with-retry
 
 export async function getSoSoValueData(): Promise<SoSoValueFetchResult> {
   const now = Date.now();

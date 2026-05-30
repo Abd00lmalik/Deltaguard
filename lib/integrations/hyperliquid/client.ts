@@ -9,6 +9,8 @@
 const HYPERLIQUID_API = 'https://api.hyperliquid.xyz/info';
 const CACHE_TTL_MS = 60_000; // 60 seconds
 
+import { fetchWithRetry } from '@/lib/utils/fetch-with-retry';
+
 export interface HyperliquidFunding {
   coin: string;
   fundingRate: number;   // annualized, e.g. 0.0001
@@ -51,11 +53,11 @@ type HLAssetCtx = {
 
 async function fetchFundingData(): Promise<{ btc: HyperliquidFunding | null; eth: HyperliquidFunding | null }> {
   try {
-    const res = await fetch(HYPERLIQUID_API, {
+    const res = await fetchWithRetry(HYPERLIQUID_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'metaAndAssetCtxs' }),
-      signal: AbortSignal.timeout(5000),
+      timeoutMs: 5000,
     });
     if (!res.ok) return { btc: null, eth: null };
     const [meta, assetCtxs] = await res.json() as [HLMeta, HLAssetCtx[]];
@@ -85,17 +87,18 @@ async function fetchFundingData(): Promise<{ btc: HyperliquidFunding | null; eth
   }
 }
 
+type HLL2Level = { px: string; sz: string; n: number };
 type HLL2 = {
-  levels: [[string, string][], [string, string][]]; // [bids, asks], each [price, size]
+  levels: [HLL2Level[], HLL2Level[]];
 };
 
 async function fetchOrderbookImbalance(coin: string): Promise<HyperliquidOrderbookImbalance | null> {
   try {
-    const res = await fetch(HYPERLIQUID_API, {
+    const res = await fetchWithRetry(HYPERLIQUID_API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'l2Book', coin, nSigFigs: 4 }),
-      signal: AbortSignal.timeout(5000),
+      body: JSON.stringify({ type: 'l2Book', coin, nSigFigs: 5 }),
+      timeoutMs: 5000,
     });
     if (!res.ok) return null;
     const book = await res.json() as HLL2;
@@ -103,8 +106,8 @@ async function fetchOrderbookImbalance(coin: string): Promise<HyperliquidOrderbo
     const asks = book.levels[1] ?? [];
 
     // Sum top-10 bid and ask depth in USD
-    const bidDepthUsd = bids.slice(0, 10).reduce((sum, [px, sz]) => sum + Number(px) * Number(sz), 0);
-    const askDepthUsd = asks.slice(0, 10).reduce((sum, [px, sz]) => sum + Number(px) * Number(sz), 0);
+    const bidDepthUsd = bids.slice(0, 10).reduce((sum, lvl) => sum + Number(lvl.px) * Number(lvl.sz), 0);
+    const askDepthUsd = asks.slice(0, 10).reduce((sum, lvl) => sum + Number(lvl.px) * Number(lvl.sz), 0);
 
     const total = bidDepthUsd + askDepthUsd;
     if (total === 0) return null;

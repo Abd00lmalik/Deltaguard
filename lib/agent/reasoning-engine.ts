@@ -2,24 +2,26 @@ import type { AgentReasoningOutput } from '@/types/agent';
 
 export function buildReasoningNarrative(output: AgentReasoningOutput): string[] {
   if (output.decision === 'hedge' && output.hedgeRecommendation) {
+    const rec = output.hedgeRecommendation;
     return [
-      `The composite signal score of ${output.compositeScore} places the market in a risk-off regime. Multiple mock SoSoValue-style inputs are pointing in the same direction: ETF outflows, macro pressure, volatility expansion, and weakening SSI momentum.`,
-      `The portfolio has a net delta of ${output.portfolioDelta.toFixed(2)}, which means it is heavily exposed to directional crypto drawdowns. The proposed hedge is partial by design; it aims to reduce downside impact without claiming full protection.`,
-      `The recommendation requires user approval before any simulated execution can occur. DeltaGuard AI never auto-executes, never touches real funds, and never presents mock execution as live trading.`
+      `The composite signal score of ${output.compositeScore} places the market in a defensive, risk-off regime. Active risk metrics suggest immediate hedging action is warranted based on prevailing macroeconomic and market indicators.`,
+      `The portfolio has a net delta of ${output.portfolioDelta.toFixed(2)}, indicating significant directional exposure to crypto market drawdowns. The recommended hedge proposes opening a ${rec.leverage}x ${rec.direction} position on ${rec.pair} for a notional value of $${rec.notionalUsd.toLocaleString()} (${rec.sizePercent}% of portfolio size).`,
+      `This recommendation requires user confirmation before execution. DeltaGuard AI enforces strict authorization gates, ensuring that no trade is dispatched to the execution gateway without explicit cryptographic approval.`
     ];
   }
 
   if (output.decision === 'watch') {
     return [
-      'The composite signal score is not severe enough to justify a hedge under the current rule set.',
-      'The agent remains in watch mode and continues surfacing the risk factors that could change the recommendation.',
-      'No simulated order is created unless the hedge threshold and portfolio delta rules are both satisfied.'
+      `The composite signal score of ${output.compositeScore} is below the threshold required to initiate a new hedge. Market parameters are currently stable.`,
+      `The portfolio delta of ${output.portfolioDelta.toFixed(2)} is monitored continuously against directional risk rules. The agent remains in monitoring mode to capture any volatility spikes.`,
+      `No hedging action is proposed at this time. Telemetry and signal pipelines continue to feed updates to the decision matrix.`
     ];
   }
 
   return [
-    'The market signal score is not in a defensive regime under the current deterministic rule set.',
-    'No hedge is proposed. If an existing hedge were active, a future production system could recommend reducing it after user review.',
-    'Manual confirmation remains mandatory for every execution-related action.'
+    `The market signal score of ${output.compositeScore} does not warrant defensive action. Risk profiles indicate standard exposure limits.`,
+    `No hedging parameters have been exceeded. The portfolio maintains a net delta of ${output.portfolioDelta.toFixed(2)}.`,
+    `System is active and scanning signals. Manual confirmation will remain required for any operational state updates.`
   ];
 }
+

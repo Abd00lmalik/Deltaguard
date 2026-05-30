@@ -16,6 +16,8 @@ export interface SSIData {
   indexDelta?: unknown;
 }
 
+export const SSI_PROTOCOL_AVAILABLE = false;
+
 export const SIGNAL_DISPLAY_NAMES: Record<string, string> = {
   etfFlowPressure: 'ETF Flow Pressure',
   macroTreasuryPressure: 'Macro Treasury Pressure',
@@ -98,7 +100,7 @@ export const SIGNAL_INTEGRITY_MAP = {
     requiredSource: "SSI Protocol index data — SSI source is not operational (Option C applied)",
     // Kept false: SSI Protocol endpoint is confirmed offline. Index snapshot from SoSoValue
     // does not provide SSI-specific momentum data. Do not enable without a real SSI data source.
-    condition: (_data: SoSoValueFetchResult, _ssiData: SSIData | null) => false,
+    condition: (_data: SoSoValueFetchResult, _ssiData: SSIData | null) => SSI_PROTOCOL_AVAILABLE,
     derivationNote: "From SSI index price momentum — requires live SSI Protocol API",
   },
   newsRegimeAlert: {

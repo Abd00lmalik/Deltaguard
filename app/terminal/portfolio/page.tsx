@@ -53,6 +53,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { IntegrationStatusCard } from '@/components/integrations/IntegrationStatusCard';
 import { useWalletPortfolio } from '@/hooks/useWalletPortfolio';
 import { useNetwork } from '@/lib/store/network-context';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 export default function TerminalPortfolioPage() {
   const {
@@ -268,237 +269,246 @@ export default function TerminalPortfolioPage() {
               </GlowCard>
             </div>
 
-            {sodexState ? (
+            <ErrorBoundary moduleName="SoDEX Margin Status">
+              {sodexState ? (
+                <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
+                      <Coins className="h-5 w-5 text-accent-lime" /> SoDEX Margin Account Status
+                    </h3>
+                  </div>
+                  <p className="mt-1 font-manrope text-xs text-text-secondary">
+                    Live margins, collateral value, and active leveraged positions fetched directly from SoDEX gateway.
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      ['Account ID', sodexState.accountId.toString()],
+                      ['Net Value', `$${sodexState.balanceUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })}`],
+                      ['Leverage', `${sodexState.leverage}x`],
+                      ['Margin Ratio', `${(sodexState.marginRatio * 100).toFixed(2)}%`]
+                    ].map(([label, val]) => (
+                      <div key={label} className="bg-surface-2 border border-white/[0.05] rounded-xl p-3">
+                        <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">{label}</span>
+                        <p className="mt-1 font-sora text-base font-bold text-white">{val}</p>
+                      </div>
+                    ))}
+                  </div>
+                </GlowCard>
+               ) : (
+                 <GlowCard className="p-6 border-amber-500/20 bg-amber-500/[0.04]">
+                   <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
+                     <AlertTriangle className="h-5 w-5 text-amber-400" /> SoDEX Futures Account Not Detected
+                   </h3>
+                   <p className="mt-2 font-manrope text-xs text-text-secondary leading-5">
+                     DeltaGuard could not find an active SoDEX <strong className="text-white">Futures/Perpetuals margin account</strong> for this wallet address.
+                     Your on-chain assets (ETH, USDC) are still shown below and the AI agent can still analyze your portfolio.
+                   </p>
+                   <p className="mt-3 font-manrope text-xs text-amber-400 leading-5">
+                     To enable hedge execution: go to <strong>testnet.sodex.com → Futures tab → deposit USDC as collateral</strong> to open a margin account. Once done, refresh this page.
+                   </p>
+                 </GlowCard>
+              )}
+            </ErrorBoundary>
+
+            <ErrorBoundary moduleName="Signed Order Authorization">
               <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
-                <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
-                    <Coins className="h-5 w-5 text-accent-lime" /> SoDEX Margin Account Status
-                  </h3>
-                </div>
-                <p className="mt-1 font-manrope text-xs text-text-secondary">
-                  Live margins, collateral value, and active leveraged positions fetched directly from SoDEX gateway.
-                </p>
-                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {[
-                    ['Account ID', sodexState.accountId.toString()],
-                    ['Net Value', `$${sodexState.balanceUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })}`],
-                    ['Leverage', `${sodexState.leverage}x`],
-                    ['Margin Ratio', `${(sodexState.marginRatio * 100).toFixed(2)}%`]
-                  ].map(([label, val]) => (
-                    <div key={label} className="bg-surface-2 border border-white/[0.05] rounded-xl p-3">
-                      <span className="text-[10px] font-bold text-text-muted uppercase tracking-wider">{label}</span>
-                      <p className="mt-1 font-sora text-base font-bold text-white">{val}</p>
-                    </div>
-                  ))}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h4 className="font-sora text-sm font-bold text-white flex items-center gap-2">
+                      <FileSignature className="h-4 w-4 text-accent-lime" /> SoDEX Signed Orders Authorization (EIP-712)
+                    </h4>
+                    <p className="font-manrope text-xs text-text-secondary max-w-xl">
+                      Approve DeltaGuard&apos;s execution layer to send signed trades to the SoDEX testnet. This creates a secure, off-chain cryptographically verifiable delegation message.
+                    </p>
+                  </div>
+                  <div>
+                    {!signedPayload ? (
+                      <PillButton size="sm" onClick={signExecutionPayload} loading={signing} disabled={addressSource !== 'wallet'}>
+                        Sign EIP-712 Payload
+                      </PillButton>
+                    ) : (
+                      <div className="text-right space-y-1">
+                        <StatusBadge variant="safe" label="Execution Authorized" />
+                        <p className="font-mono text-[10px] text-text-muted max-w-[280px] truncate">
+                          Sig: {signedPayload}
+                        </p>
+                      </div>
+                    )}
+                    {addressSource !== 'wallet' && !signedPayload && (
+                      <p className="mt-2 text-right font-manrope text-[10px] text-warning">
+                        * Web3 wallet connection required to sign.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </GlowCard>
-             ) : (
-               <GlowCard className="p-6 border-amber-500/20 bg-amber-500/[0.04]">
-                 <h3 className="font-sora text-base font-bold text-white flex items-center gap-2">
-                   <AlertTriangle className="h-5 w-5 text-amber-400" /> SoDEX Futures Account Not Detected
-                 </h3>
-                 <p className="mt-2 font-manrope text-xs text-text-secondary leading-5">
-                   DeltaGuard could not find an active SoDEX <strong className="text-white">Futures/Perpetuals margin account</strong> for this wallet address.
-                   Your on-chain assets (ETH, USDC) are still shown below and the AI agent can still analyze your portfolio.
-                 </p>
-                 <p className="mt-3 font-manrope text-xs text-amber-400 leading-5">
-                   To enable hedge execution: go to <strong>testnet.sodex.com → Futures tab → deposit USDC as collateral</strong> to open a margin account. Once done, refresh this page.
-                 </p>
-               </GlowCard>
-            )}
+            </ErrorBoundary>
 
-
-            <GlowCard className="p-6 border-white/[0.04] bg-neutral-900/40">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <h4 className="font-sora text-sm font-bold text-white flex items-center gap-2">
-                    <FileSignature className="h-4 w-4 text-accent-lime" /> SoDEX Signed Orders Authorization (EIP-712)
-                  </h4>
-                  <p className="font-manrope text-xs text-text-secondary max-w-xl">
-                    Approve DeltaGuard&apos;s execution layer to send signed trades to the SoDEX testnet. This creates a secure, off-chain cryptographically verifiable delegation message.
-                  </p>
-                </div>
-                <div>
-                  {!signedPayload ? (
-                    <PillButton size="sm" onClick={signExecutionPayload} loading={signing} disabled={addressSource !== 'wallet'}>
-                      Sign EIP-712 Payload
-                    </PillButton>
-                  ) : (
-                    <div className="text-right space-y-1">
-                      <StatusBadge variant="safe" label="Execution Authorized" />
-                      <p className="font-mono text-[10px] text-text-muted max-w-[280px] truncate">
-                        Sig: {signedPayload}
-                      </p>
-                    </div>
-                  )}
-                  {addressSource !== 'wallet' && !signedPayload && (
-                    <p className="mt-2 text-right font-manrope text-[10px] text-warning">
-                      * Web3 wallet connection required to sign.
-                    </p>
-                  )}
-                </div>
-              </div>
-            </GlowCard>
-
-            <GlowCard className="overflow-hidden p-0 border-white/[0.04]">
-              <div className="overflow-x-auto">
-                <table className="w-full font-manrope text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06]">
-                      {['Asset', 'Class', 'Amount', 'Price', 'Value (USD)', 'Delta', 'Allocation'].map((h) => (
-                        <th key={h} className="px-4 py-3 text-left font-manrope text-[10px] font-bold uppercase tracking-[0.12em] text-text-muted">{h}</th>
+            <ErrorBoundary moduleName="Token Holdings Table">
+              <GlowCard className="overflow-hidden p-0 border-white/[0.04]">
+                <div className="overflow-x-auto">
+                  <table className="w-full font-manrope text-sm">
+                    <thead>
+                      <tr className="border-b border-white/[0.06]">
+                        {['Asset', 'Class', 'Amount', 'Price', 'Value (USD)', 'Delta', 'Allocation'].map((h) => (
+                          <th key={h} className="px-4 py-3 text-left font-manrope text-[10px] font-bold uppercase tracking-[0.12em] text-text-muted">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(assets ?? []).map((asset) => (
+                        <tr key={asset.id} className="border-b border-white/[0.04] transition-colors hover:bg-white/[0.02]">
+                          <td className="px-4 py-3">
+                            <p className="font-sora text-sm font-bold text-white">{asset.symbol}</p>
+                            <p className="text-xs text-text-muted">{asset.name}</p>
+                          </td>
+                          <td className="px-4 py-3 text-text-secondary capitalize">{asset.class}</td>
+                          <td className="px-4 py-3 font-mono text-white">{asset.amount.toLocaleString()}</td>
+                           <td className="px-4 py-3 font-mono text-white">
+                             {asset.priceUsd !== null ? `$${asset.priceUsd.toLocaleString()}` : <span className="text-neutral-600 text-xs">Price unavailable</span>}
+                           </td>
+                           <td className="px-4 py-3 font-mono font-bold text-white">
+                             {asset.valueUsd !== null ? `$${asset.valueUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : <span className="text-neutral-600 text-xs">Price unavailable</span>}
+                           </td>
+                          <td className="px-4 py-3 font-mono text-accent-lime">{asset.delta.toFixed(2)}</td>
+                          <td className="px-4 py-3 font-mono text-text-secondary">{asset.allocation.toFixed(1)}%</td>
+                        </tr>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(assets ?? []).map((asset) => (
-                      <tr key={asset.id} className="border-b border-white/[0.04] transition-colors hover:bg-white/[0.02]">
-                        <td className="px-4 py-3">
-                          <p className="font-sora text-sm font-bold text-white">{asset.symbol}</p>
-                          <p className="text-xs text-text-muted">{asset.name}</p>
-                        </td>
-                        <td className="px-4 py-3 text-text-secondary capitalize">{asset.class}</td>
-                        <td className="px-4 py-3 font-mono text-white">{asset.amount.toLocaleString()}</td>
-                         <td className="px-4 py-3 font-mono text-white">
-                           {asset.priceUsd !== null ? `$${asset.priceUsd.toLocaleString()}` : <span className="text-neutral-600 text-xs">Price unavailable</span>}
-                         </td>
-                         <td className="px-4 py-3 font-mono font-bold text-white">
-                           {asset.valueUsd !== null ? `$${asset.valueUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : <span className="text-neutral-600 text-xs">Price unavailable</span>}
-                         </td>
-                        <td className="px-4 py-3 font-mono text-accent-lime">{asset.delta.toFixed(2)}</td>
-                        <td className="px-4 py-3 font-mono text-text-secondary">{asset.allocation.toFixed(1)}%</td>
-                      </tr>
-                    ))}
-                    {assets?.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-8 text-center font-manrope text-sm text-text-muted">
-                          No assets found on {networkLabel} for this address.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t border-white/[0.08]">
-                      <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-text-muted">Spot Balance Total</td>
-                      <td className="px-4 py-3 font-mono font-bold text-white">${spotValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                      <td colSpan={2} />
-                    </tr>
-                    {defiValue > 0 && (
-                      <tr className="border-t border-white/[0.04]">
-                        <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-text-muted">DeFi Positions Net Total</td>
-                        <td className="px-4 py-3 font-mono font-bold text-white">${defiValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                      {assets?.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-8 text-center font-manrope text-sm text-text-muted">
+                            No assets found on {networkLabel} for this address.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-white/[0.08]">
+                        <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-text-muted">Spot Balance Total</td>
+                        <td className="px-4 py-3 font-mono font-bold text-white">${spotValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
                         <td colSpan={2} />
                       </tr>
-                    )}
-                    <tr className="border-t border-white/[0.08] bg-white/[0.01]">
-                      <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-accent-lime">Total Net Portfolio Value</td>
-                      <td className="px-4 py-3 font-mono font-bold text-accent-lime">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
-                      <td colSpan={2} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </GlowCard>
+                      {defiValue > 0 && (
+                        <tr className="border-t border-white/[0.04]">
+                          <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-text-muted">DeFi Positions Net Total</td>
+                          <td className="px-4 py-3 font-mono font-bold text-white">${defiValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                          <td colSpan={2} />
+                        </tr>
+                      )}
+                      <tr className="border-t border-white/[0.08] bg-white/[0.01]">
+                        <td colSpan={4} className="px-4 py-3 font-manrope text-xs font-bold uppercase tracking-wider text-accent-lime">Total Net Portfolio Value</td>
+                        <td className="px-4 py-3 font-mono font-bold text-accent-lime">${totalValue.toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td colSpan={2} />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </GlowCard>
+            </ErrorBoundary>
 
             {/* DeFi Positions Section */}
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <SectionLabel>DeFi Positions</SectionLabel>
-                <StatusBadge variant={(defiPositions ?? []).length > 0 ? 'safe' : 'muted'} label={`${(defiPositions ?? []).length} Active Protocol${(defiPositions ?? []).length === 1 ? '' : 's'}`} />
-              </div>
-              
-              {defiPositions && defiPositions.length > 0 ? (
-                <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                  {defiPositions.map((pos) => {
-                    const chainName = pos.chainId === 1 ? 'Ethereum' : pos.chainId === 8453 ? 'Base' : pos.chainId === 10 ? 'Optimism' : 'Sepolia';
-                    return (
-                      <GlowCard key={pos.id} className="p-5 border-white/[0.04] bg-neutral-900/40 flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-center justify-between">
-                            <h4 className="font-sora text-sm font-bold text-white flex items-center gap-2">
-                              <Shield className="h-4 w-4 text-accent-lime" /> {pos.name}
-                            </h4>
-                            <span className="rounded-full bg-white/[0.05] px-2 py-0.5 font-manrope text-[10px] text-text-muted">
-                              {chainName}
-                            </span>
+            <ErrorBoundary moduleName="DeFi Positions">
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <SectionLabel>DeFi Positions</SectionLabel>
+                  <StatusBadge variant={(defiPositions ?? []).length > 0 ? 'safe' : 'muted'} label={`${(defiPositions ?? []).length} Active Protocol${(defiPositions ?? []).length === 1 ? '' : 's'}`} />
+                </div>
+                
+                {defiPositions && defiPositions.length > 0 ? (
+                  <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                    {defiPositions.map((pos) => {
+                      const chainName = pos.chainId === 1 ? 'Ethereum' : pos.chainId === 8453 ? 'Base' : pos.chainId === 10 ? 'Optimism' : 'Sepolia';
+                      return (
+                        <GlowCard key={pos.id} className="p-5 border-white/[0.04] bg-neutral-900/40 flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-sora text-sm font-bold text-white flex items-center gap-2">
+                                <Shield className="h-4 w-4 text-accent-lime" /> {pos.name}
+                              </h4>
+                              <span className="rounded-full bg-white/[0.05] px-2 py-0.5 font-manrope text-[10px] text-text-muted">
+                                {chainName}
+                              </span>
+                            </div>
+                            
+                            {pos.protocol === 'aave' && (
+                              <div className="mt-4 space-y-2">
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">Collateral</span>
+                                  <span className="text-white font-mono">${pos.details.collateralUsd?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">Debt</span>
+                                  <span className="text-white font-mono">${pos.details.debtUsd?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                </div>
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">Health Factor</span>
+                                  <span className={cn(
+                                    "font-mono font-bold",
+                                    (pos.details.healthFactor ?? 2.0) <= 1.2 ? "text-danger" : (pos.details.healthFactor ?? 2.0) <= 1.5 ? "text-warning" : "text-accent-lime"
+                                  )}>
+                                    {pos.details.healthFactor}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+
+                            {pos.protocol === 'lido' && (
+                              <div className="mt-4 space-y-2">
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">Staked Amount</span>
+                                  <span className="text-white font-mono">{pos.details.amount?.toFixed(4)} stETH</span>
+                                </div>
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">stETH Price</span>
+                                  <span className="text-white font-mono">${pos.details.priceUsd?.toLocaleString()}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {pos.protocol === 'uniswap' && (
+                              <div className="mt-4 space-y-2">
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">Token ID</span>
+                                  <span className="text-white font-mono">#{pos.details.tokenId}</span>
+                                </div>
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">Pair</span>
+                                  <span className="text-white font-mono">{pos.details.pairName}</span>
+                                </div>
+                                <div className="flex justify-between text-xs font-manrope">
+                                  <span className="text-text-muted">Liquidity</span>
+                                  <span className="text-white font-mono truncate max-w-[120px]">{pos.details.liquidity}</span>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           
-                          {pos.protocol === 'aave' && (
-                            <div className="mt-4 space-y-2">
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">Collateral</span>
-                                <span className="text-white font-mono">${pos.details.collateralUsd?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">Debt</span>
-                                <span className="text-white font-mono">${pos.details.debtUsd?.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                              </div>
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">Health Factor</span>
-                                <span className={cn(
-                                  "font-mono font-bold",
-                                  (pos.details.healthFactor ?? 2.0) <= 1.2 ? "text-danger" : (pos.details.healthFactor ?? 2.0) <= 1.5 ? "text-warning" : "text-accent-lime"
-                                )}>
-                                  {pos.details.healthFactor}
-                                </span>
-                              </div>
-                            </div>
-                          )}
+                          <div className="mt-6 pt-4 border-t border-white/[0.05] flex justify-between items-center">
+                            <span className="text-xs font-manrope text-text-muted">Net Position Value</span>
+                            <span className="font-sora text-sm font-bold text-accent-lime">
+                              ${pos.valueUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </GlowCard>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex h-28 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-neutral-900/20 text-center p-4">
+                    <p className="font-manrope text-xs text-text-muted">
+                      No active DeFi protocols detected on {isTestnet ? 'Sepolia' : 'Ethereum, Base, or Optimism'}.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </ErrorBoundary>
 
-                          {pos.protocol === 'lido' && (
-                            <div className="mt-4 space-y-2">
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">Staked Amount</span>
-                                <span className="text-white font-mono">{pos.details.amount?.toFixed(4)} stETH</span>
-                              </div>
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">stETH Price</span>
-                                <span className="text-white font-mono">${pos.details.priceUsd?.toLocaleString()}</span>
-                              </div>
-                            </div>
-                          )}
-
-                          {pos.protocol === 'uniswap' && (
-                            <div className="mt-4 space-y-2">
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">Token ID</span>
-                                <span className="text-white font-mono">#{pos.details.tokenId}</span>
-                              </div>
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">Pair</span>
-                                <span className="text-white font-mono">{pos.details.pairName}</span>
-                              </div>
-                              <div className="flex justify-between text-xs font-manrope">
-                                <span className="text-text-muted">Liquidity</span>
-                                <span className="text-white font-mono truncate max-w-[120px]">{pos.details.liquidity}</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        
-                        <div className="mt-6 pt-4 border-t border-white/[0.05] flex justify-between items-center">
-                          <span className="text-xs font-manrope text-text-muted">Net Position Value</span>
-                          <span className="font-sora text-sm font-bold text-accent-lime">
-                            ${pos.valueUsd.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      </GlowCard>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex h-28 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-neutral-900/20 text-center p-4">
-                  <p className="font-manrope text-xs text-text-muted">
-                    No active DeFi protocols detected on {isTestnet ? 'Sepolia' : 'Ethereum, Base, or Optimism'}.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid gap-6 xl:grid-cols-2">
-              <AllocationChart assets={assets || undefined} />
-              <ExposureChart assets={assets || undefined} />
-            </div>
+            <ErrorBoundary moduleName="Portfolio Allocation Charts">
+              <div className="grid gap-6 xl:grid-cols-2">
+                <AllocationChart assets={assets || undefined} />
+                <ExposureChart assets={assets || undefined} />
+              </div>
+            </ErrorBoundary>
           </>
         )}
 
@@ -506,7 +516,7 @@ export default function TerminalPortfolioPage() {
           name="EVM On-Chain RPC"
           icon={GitBranch}
           statusBadge={walletConnected && assets ? 'ACTIVE' : 'OFFLINE'}
-          description={`Provides live ERC20 token balances and native ETH via ${process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ? 'Alchemy Token API (auto-discovery enabled)' : 'public RPC (static token list)'} on ${networkLabel}.`}
+          description={`Provides live ERC20 token balances and native ETH via auto-discovery or public RPC on ${networkLabel}.`}
         />
       </div>
     </>

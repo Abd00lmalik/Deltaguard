@@ -19,6 +19,7 @@ import { HedgeProposalCard } from '@/components/agent/HedgeProposalCard';
 import { formatCurrency } from '@/lib/utils/format';
 import { staggerContainer, staggerItem, slideInRight } from '@/lib/utils/motion';
 import type { AgentReasoningOutput } from '@/types/agent';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 const loadingMessages = [
   'Fetching live ETH price...',
@@ -247,15 +248,23 @@ export default function TerminalDashboardPage() {
           <>
             <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
               {/* Real portfolio history chart — walletAddress scopes it to this user */}
-              <PortfolioOverview walletAddress={walletAddress} />
-              <RiskScoreGauge score={agentOutput ? Math.round(Math.abs(agentOutput.compositeScore) * 0.8) : 0} label="LIVE RISK" />
+              <ErrorBoundary moduleName="Portfolio Overview">
+                <PortfolioOverview walletAddress={walletAddress} />
+              </ErrorBoundary>
+              <ErrorBoundary moduleName="Risk Score Gauge">
+                <RiskScoreGauge score={agentOutput ? Math.round(Math.abs(agentOutput.compositeScore) * 0.8) : 0} label="LIVE RISK" />
+              </ErrorBoundary>
             </div>
 
             <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
               {/* Live signals overview — no mock data */}
-              <SignalOverview />
+              <ErrorBoundary moduleName="Signal Overview">
+                <SignalOverview />
+              </ErrorBoundary>
               <motion.div initial="hidden" animate="visible" variants={slideInRight} transition={{ delay: 0.3 }}>
-                <HedgeProposalCard output={agentOutput} />
+                <ErrorBoundary moduleName="Hedge Proposal">
+                  <HedgeProposalCard output={agentOutput} />
+                </ErrorBoundary>
               </motion.div>
             </div>
 

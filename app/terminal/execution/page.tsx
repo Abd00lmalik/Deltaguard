@@ -12,6 +12,7 @@ import { PillButton } from '@/components/ui/PillButton';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import type { OrderTimelineStep } from '@/types/execution';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 type ExecutionPhase =
   | 'NONE'
@@ -229,85 +230,89 @@ export default function TerminalExecutionPage() {
 
             {/* Order ticket */}
             {order && (
-              <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-                <GlowCard className="p-5">
-                  <div className="flex items-center justify-between">
-                    <h2 className="font-sora text-base font-bold text-white">Live Hedge Order</h2>
-                    <StatusBadge variant={phaseBadge(phase)} label={phase.replace(/_/g, ' ')} />
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-2 gap-4">
-                    {[
-                      ['Instrument', order.pair],
-                      ['Direction', order.direction.toUpperCase()],
-                      ['Leverage', `${order.leverage}x`],
-                      ['Notional USD', `$${order.notionalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}`],
-                      ['Est. Price', `$${order.estimatedPrice.toLocaleString()}`],
-                      ['Venue', 'SoDEX Testnet'],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-                        <p className="font-manrope text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted">{label}</p>
-                        <p className="mt-1.5 font-sora text-base font-bold text-white">{value}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {state?.orderId && (
-                    <div className="mt-4 rounded-xl border border-accent-lime/15 bg-accent-lime-dim p-3">
-                      <p className="font-manrope text-xs text-text-muted">SoDEX Order ID</p>
-                      <p className="mt-1 font-mono text-sm text-accent-lime">{state.orderId}</p>
+              <ErrorBoundary moduleName="Order Ticket & Timeline">
+                <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                  <GlowCard className="p-5">
+                    <div className="flex items-center justify-between">
+                      <h2 className="font-sora text-base font-bold text-white">Live Hedge Order</h2>
+                      <StatusBadge variant={phaseBadge(phase)} label={phase.replace(/_/g, ' ')} />
                     </div>
-                  )}
 
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    {phase === 'AWAITING_USER_APPROVAL' && (
-                      <>
-                        <PillButton
-                          loading={approving}
-                          disabled={approving}
-                          icon={<CheckCircle className="h-4 w-4" />}
-                          onClick={handleApprove}
-                        >
-                          Approve &amp; Submit to SoDEX
-                        </PillButton>
-                        <PillButton
-                          variant="danger"
-                          disabled={approving}
-                          icon={<XCircle className="h-4 w-4" />}
-                          onClick={handleCancel}
-                        >
-                          Cancel Order
-                        </PillButton>
-                      </>
-                    )}
-                    {(phase === 'FILLED' || phase === 'FAILED' || phase === 'CANCELLED' || phase === 'ORDER_PREPARING') && (
-                      <PillButton variant="ghost" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={handleReset}>
-                        Reset for New Order
-                      </PillButton>
-                    )}
-                  </div>
-                </GlowCard>
+                    <div className="mt-5 grid grid-cols-2 gap-4">
+                      {[
+                        ['Instrument', order.pair],
+                        ['Direction', order.direction.toUpperCase()],
+                        ['Leverage', `${order.leverage}x`],
+                        ['Notional USD', `$${order.notionalUsd.toLocaleString('en-US', { minimumFractionDigits: 2 })}`],
+                        ['Est. Price', `$${order.estimatedPrice.toLocaleString()}`],
+                        ['Venue', 'SoDEX Testnet'],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
+                          <p className="font-manrope text-[10px] font-bold uppercase tracking-[0.14em] text-text-muted">{label}</p>
+                          <p className="mt-1.5 font-sora text-base font-bold text-white">{value}</p>
+                        </div>
+                      ))}
+                    </div>
 
-                <ExecutionTimeline steps={order.timeline} />
-              </div>
+                    {state?.orderId && (
+                      <div className="mt-4 rounded-xl border border-accent-lime/15 bg-accent-lime-dim p-3">
+                        <p className="font-manrope text-xs text-text-muted">SoDEX Order ID</p>
+                        <p className="mt-1 font-mono text-sm text-accent-lime">{state.orderId}</p>
+                      </div>
+                    )}
+
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      {phase === 'AWAITING_USER_APPROVAL' && (
+                        <>
+                          <PillButton
+                            loading={approving}
+                            disabled={approving}
+                            icon={<CheckCircle className="h-4 w-4" />}
+                            onClick={handleApprove}
+                          >
+                            Approve &amp; Submit to SoDEX
+                          </PillButton>
+                          <PillButton
+                            variant="danger"
+                            disabled={approving}
+                            icon={<XCircle className="h-4 w-4" />}
+                            onClick={handleCancel}
+                          >
+                            Cancel Order
+                          </PillButton>
+                        </>
+                      )}
+                      {(phase === 'FILLED' || phase === 'FAILED' || phase === 'CANCELLED' || phase === 'ORDER_PREPARING') && (
+                        <PillButton variant="ghost" icon={<RefreshCw className="h-3.5 w-3.5" />} onClick={handleReset}>
+                          Reset for New Order
+                        </PillButton>
+                      )}
+                    </div>
+                  </GlowCard>
+
+                  <ExecutionTimeline steps={order.timeline} />
+                </div>
+              </ErrorBoundary>
             )}
 
             {/* Audit log */}
             {state?.log && state.log.length > 0 && (
-              <GlowCard className="p-5">
-                <h2 className="font-sora text-base font-bold text-white">Execution Audit Log</h2>
-                <div className="mt-4 space-y-2">
-                  {[...state.log].reverse().map((entry, i) => (
-                    <div key={i} className="flex items-start gap-3 rounded-xl border border-white/[0.04] bg-white/[0.02] p-3">
-                      <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-accent-lime/60" />
-                      <div>
-                        <p className="font-manrope text-xs font-bold text-text-muted">{new Date(entry.timestamp).toLocaleTimeString()} — {entry.phase}</p>
-                        <p className="mt-0.5 font-manrope text-sm text-text-secondary">{entry.message}</p>
+              <ErrorBoundary moduleName="Execution Audit Log">
+                <GlowCard className="p-5">
+                  <h2 className="font-sora text-base font-bold text-white">Execution Audit Log</h2>
+                  <div className="mt-4 space-y-2">
+                    {[...state.log].reverse().map((entry, i) => (
+                      <div key={i} className="flex items-start gap-3 rounded-xl border border-white/[0.04] bg-white/[0.02] p-3">
+                        <span className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-accent-lime/60" />
+                        <div>
+                          <p className="font-manrope text-xs font-bold text-text-muted">{new Date(entry.timestamp).toLocaleTimeString()} — {entry.phase}</p>
+                          <p className="mt-0.5 font-manrope text-sm text-text-secondary">{entry.message}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              </GlowCard>
+                    ))}
+                  </div>
+                </GlowCard>
+              </ErrorBoundary>
             )}
 
             <p className="font-manrope text-xs text-text-muted">

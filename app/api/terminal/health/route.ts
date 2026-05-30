@@ -96,6 +96,7 @@ export async function GET(request: Request) {
     sodexPublic: { status: sodexPublicHealth, connected: sodexPublicHealth === 'connected' },
     sodexSigned: { status: sodexSignedHealth, connected: sodexSignedHealth === 'connected' || sodexSignedHealth === 'degraded' },
     database:    { status: process.env.DATABASE_URL ? 'connected' : 'setup_required', connected: Boolean(process.env.DATABASE_URL) },
+    llm:         { status: process.env.GEMINI_API_KEY ? 'connected' : 'setup_required', connected: Boolean(process.env.GEMINI_API_KEY) },
     // Legacy boolean fields for backward compat with LiveStatusBar
     sosovalue_ok:  sosoHealth === 'connected' || sosoHealth === 'degraded',
     ssi_ok:        ssiHealth  === 'connected',

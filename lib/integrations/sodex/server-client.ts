@@ -161,12 +161,125 @@ export async function placeOrder(
   };
 }
 
-export async function getOrderStatus(orderId: string): Promise<{ orderId: string; status: string }> {
-  return { orderId, status: 'filled' };
+interface SodexOrderRaw {
+  status?: string;
+  orderStatus?: string;
+  filledQty?: number;
+  executedQty?: number;
+  remainingQty?: number;
+  leavesQty?: number;
+  avgFillPrice?: number;
+  avgPrice?: number;
+  updatedAt?: string;
+  timestamp?: string | number;
 }
 
-export async function cancelOrder(orderId: string): Promise<{ orderId: string; status: string }> {
-  return { orderId, status: 'cancelled' };
+export async function getOrderStatus(orderId: string): Promise<{
+  orderId: string;
+  status: 'open' | 'filled' | 'partially_filled' | 'cancelled' | 'rejected' | 'expired' | 'unknown';
+  filledQty?: number;
+  remainingQty?: number;
+  avgFillPrice?: number;
+  updatedAt?: string;
+} | null> {
+  const baseUrl = process.env.SODEX_BASE_URL;
+  if (!baseUrl) {
+    console.error('[SoDEX] SODEX_BASE_URL not configured. Cannot poll order status.');
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/trade/order?id=${encodeURIComponent(orderId)}`, {
+      method: 'GET',
+      headers: buildSodexHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (res.status === 404) {
+      console.warn(`[SoDEX] Order ${orderId} not found.`);
+      return { orderId, status: 'unknown' };
+    }
+    if (!res.ok) {
+      console.error(`[SoDEX] Order status fetch failed: ${res.status}`);
+      return null;
+    }
+
+    const data = (await res.json()) as SodexOrderRaw;
+    return {
+      orderId,
+      status: normalizeSodexStatus(data.status ?? data.orderStatus ?? 'unknown'),
+      filledQty: data.filledQty ?? data.executedQty,
+      remainingQty: data.remainingQty ?? data.leavesQty,
+      avgFillPrice: data.avgFillPrice ?? data.avgPrice,
+      updatedAt: data.updatedAt ?? (data.timestamp !== undefined ? String(data.timestamp) : undefined),
+    };
+  } catch (err) {
+    console.error('[SoDEX] getOrderStatus error:', (err as Error).message);
+    return null;
+  }
+}
+
+function normalizeSodexStatus(raw: string): 'open' | 'filled' | 'partially_filled' | 'cancelled' | 'rejected' | 'expired' | 'unknown' {
+  const map: Record<string, 'open' | 'filled' | 'partially_filled' | 'cancelled' | 'rejected' | 'expired'> = {
+    open: 'open',
+    new: 'open',
+    active: 'open',
+    filled: 'filled',
+    fully_filled: 'filled',
+    partially_filled: 'partially_filled',
+    partial: 'partially_filled',
+    cancelled: 'cancelled',
+    canceled: 'cancelled',
+    rejected: 'rejected',
+    expired: 'expired',
+  };
+  return map[raw.toLowerCase()] ?? 'unknown';
+}
+
+export async function cancelOrder(orderId: string): Promise<{
+  orderId: string;
+  status: 'cancelled' | 'failed';
+  message?: string;
+} | null> {
+  const baseUrl = process.env.SODEX_BASE_URL;
+  const accountId = process.env.SODEX_ACCOUNT_ID;
+
+  if (!baseUrl) {
+    console.error('[SoDEX] SODEX_BASE_URL not configured. Cannot cancel order.');
+    return null;
+  }
+
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/trade/cancel`, {
+      method: 'POST',
+      headers: {
+        ...buildSodexHeaders(),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ orderId, accountId }),
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (!res.ok) {
+      const errBody = await res.text();
+      console.error(`[SoDEX] Cancel failed (${res.status}): ${errBody}`);
+      return { orderId, status: 'failed', message: `HTTP ${res.status}` };
+    }
+
+    return { orderId, status: 'cancelled' };
+  } catch (err) {
+    console.error('[SoDEX] cancelOrder error:', (err as Error).message);
+    return { orderId, status: 'failed', message: (err as Error).message };
+  }
+}
+
+function buildSodexHeaders(): Record<string, string> {
+  const apiKey = process.env.SODEX_API_KEY;
+  const headers: Record<string, string> = {};
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
+  }
+  return headers;
 }
 
 export async function getSodexAccountState(

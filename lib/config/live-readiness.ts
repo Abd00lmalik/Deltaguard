@@ -8,6 +8,7 @@ export interface ReadinessReport {
   sodexPublic: boolean;
   sodexSigned: boolean;
   database: boolean;
+  llmEnabled: boolean;
   allRequiredForPublicReads: boolean;
   allRequiredForSignedExecution: boolean;
 }
@@ -30,12 +31,15 @@ export function checkLiveReadiness(): ReadinessReport {
 
   const database = !!process.env.DATABASE_URL;
 
+  const llmEnabled = !!process.env.GEMINI_API_KEY;
+
   return {
     sosovalue,
     ssi,
     sodexPublic,
     sodexSigned,
     database,
+    llmEnabled,
     allRequiredForPublicReads: sosovalue && sodexPublic,
     allRequiredForSignedExecution: sosovalue && sodexSigned,
   };

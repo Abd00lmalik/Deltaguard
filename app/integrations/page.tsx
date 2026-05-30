@@ -36,7 +36,6 @@ components/dashboard/PortfolioOverview.tsx:15:import type { PortfolioSnapshot } 
 components/dashboard/PortfolioOverview.tsx:32:  const [chartData, setChartData] = useState<ChartPoint[]>([]);
 */
 
-import { redirect } from 'next/navigation';
 import { ArrowUpDown, Brain, GitBranch, Network, Zap } from 'lucide-react';
 import { Topbar } from '@/components/layout/Topbar';
 import { IntegrationStatusCard } from '@/components/integrations/IntegrationStatusCard';
@@ -81,11 +80,6 @@ const cards = [
 ];
 
 export default function IntegrationsPage() {
-  const isDemoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-
-  if (!isDemoMode) {
-    redirect("/terminal/dashboard");
-  }
 
   return (
     <>

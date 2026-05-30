@@ -12,6 +12,7 @@ import { PillButton } from '@/components/ui/PillButton';
 import { SectionLabel } from '@/components/ui/SectionLabel';
 import type { CompositeScore, MarketSignal } from '@/types/signals';
 import type { SignalSource } from '@/lib/types/signal-source';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 
 interface SignalMetadata {
   source: SignalSource;
@@ -176,8 +177,12 @@ export default function TerminalSignalsPage() {
           </GlowCard>
         ) : (
           <>
-            <CompositeSignalScore score={composite} />
-            <SignalFeed signals={signals} />
+            <ErrorBoundary moduleName="Composite Score">
+              <CompositeSignalScore score={composite} />
+            </ErrorBoundary>
+            <ErrorBoundary moduleName="Signal Feed">
+              <SignalFeed signals={signals} />
+            </ErrorBoundary>
           </>
         )}
       </div>

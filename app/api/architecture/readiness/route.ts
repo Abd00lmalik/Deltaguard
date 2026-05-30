@@ -10,6 +10,7 @@ export async function GET() {
     sodexPublic: readiness.sodexPublic,
     sodexSigned: readiness.sodexSigned,
     database: readiness.database,
+    llmEnabled: readiness.llmEnabled,
     allRequiredForPublicReads: readiness.allRequiredForPublicReads,
     allRequiredForSignedExecution: readiness.allRequiredForSignedExecution,
   });

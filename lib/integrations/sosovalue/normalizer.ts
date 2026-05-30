@@ -40,6 +40,7 @@ components/dashboard/PortfolioOverview.tsx:32:  const [chartData, setChartData] 
  * DeltaGuard AI - SoSoValue Normalizer with Signal Integrity Audit
  */
 
+import { z } from 'zod';
 import type { MarketSignal, SignalCategory, SignalSeverity } from '@/types/signals';
 import type { SignalSource } from '@/lib/types/signal-source';
 import { SIGNAL_INTEGRITY_MAP, SIGNAL_DISPLAY_NAMES, type SSIData } from './signal-audit';
@@ -49,6 +50,44 @@ import type { DeribitIntelligence } from '@/lib/integrations/deribit/client';
 import type { HyperliquidIntelligence } from '@/lib/integrations/hyperliquid/client';
 import type { RiskProfile } from '@/lib/config/signal-weights';
 import { getSignalWeight } from '@/lib/config/signal-weights';
+
+const NewsItemSchema = z.object({
+  id: z.string().optional(),
+  title: z.string().optional(),
+  content: z.string().optional(),
+  release_time: z.number().optional(),
+  tags: z.array(z.string()).optional(),
+  matched_currencies: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    full_name: z.string()
+  }).passthrough()).optional()
+}).passthrough();
+
+const IndexSnapshotSchema = z.record(z.string(), z.unknown());
+const BtcSnapshotSchema = z.record(z.string(), z.unknown());
+
+const ProviderErrorSchema = z.object({
+  provider: z.string().optional(),
+  endpoint: z.string().optional(),
+  httpStatus: z.number().nullable().optional(),
+  message: z.string().optional()
+}).passthrough();
+
+export const SoSoValueFetchResultSchema = z.object({
+  available: z.boolean(),
+  source: z.string(),
+  providerHealth: z.string(),
+  newsList: z.array(NewsItemSchema).optional().default([]),
+  indexSnapshot: IndexSnapshotSchema.optional().default({}),
+  btcSnapshot: BtcSnapshotSchema.optional().default({}),
+  errors: z.array(ProviderErrorSchema).optional().default([]),
+  lastUpdated: z.string().optional()
+}).passthrough();
+
+export function validateSoSoValueResponse(data: unknown): SoSoValueFetchResult {
+  return SoSoValueFetchResultSchema.parse(data) as unknown as SoSoValueFetchResult;
+}
 
 function getSeverity(score: number): SignalSeverity {
   if (score <= -75) return 'critical';
@@ -72,16 +111,18 @@ export function normalizeSoSoValueData(
   hyperliquidData?: HyperliquidIntelligence,
   riskProfile: RiskProfile = 'balanced'
 ): MarketSignal[] {
+  // Enforce validated payload structure
+  const validatedResult = validateSoSoValueResponse(sosoResult);
   const now = new Date();
   
-  const btcRaw = (sosoResult.btcSnapshot as Record<string, unknown>);
+  const btcRaw = (validatedResult.btcSnapshot as Record<string, unknown>);
   // SoSoValue API may nest data inside a 'data' wrapper; unwrap if needed
   const btcData = (btcRaw?.data as Record<string, unknown>) ?? btcRaw;
   const btcSnapshot = btcData ?? {};
-  const indexRaw = (sosoResult.indexSnapshot as Record<string, unknown>);
+  const indexRaw = (validatedResult.indexSnapshot as Record<string, unknown>);
   const indexData = (indexRaw?.data as Record<string, unknown>) ?? indexRaw;
   const indexSnapshot = indexData ?? {};
-  const newsList = sosoResult.newsList;
+  const newsList = validatedResult.newsList;
 
   // Use values from snapshots if available — check multiple common field name patterns
   const btcChange: number = (() => {
@@ -240,17 +281,17 @@ export function normalizeSoSoValueData(
     newsRegimeAlert: { category: 'news-regime-alert', score: newsScore, explanation: newsExplanation, sourceField: 'newsList' }
   };
 
-  const overallSource = sosoResult.source;
+  const overallSource = validatedResult.source;
 
   const baseSignals: MarketSignal[] = Object.entries(SIGNAL_INTEGRITY_MAP).map(([id, config], index) => {
     const detail = valuesMap[id];
-    let conditionMet = sosoResult.available ? config.condition(sosoResult, ssiData) : false;
+    let conditionMet = validatedResult.available ? config.condition(validatedResult, ssiData) : false;
 
     if (id === 'fundingRatePressure' && fundingRates) {
       conditionMet = true;
     }
 
-    if (!conditionMet || !sosoResult.available) {
+    if (!conditionMet || !validatedResult.available) {
       return {
         id: `sig-${id}-${now.getTime()}-${index}`,
         category: detail.category,
@@ -261,10 +302,10 @@ export function normalizeSoSoValueData(
         severity: 'low',
         confidence: null,
         timestamp: now.toISOString(),
-        explanation: `This signal is currently unavailable. ${sosoResult.available ? 'Required data field not present in SoSoValue response.' : 'SoSoValue data unavailable.'}`,
+        explanation: `This signal is currently unavailable. ${validatedResult.available ? 'Required data field not present in SoSoValue response.' : 'SoSoValue data unavailable.'}`,
         source: 'unavailable' as SignalSource,
         sourceField: null,
-        unavailableReason: sosoResult.available
+        unavailableReason: validatedResult.available
           ? `Required source data '${config.requiredSource}' not present in SoSoValue response.`
           : `SoSoValue data unavailable.`,
         direction: null

@@ -8,15 +8,6 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, base, optimism, sepolia } from 'wagmi/chains';
 import { injected, walletConnect, coinbaseWallet } from 'wagmi/connectors';
 
-const alchemyKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ?? '';
-
-function alchemyTransport(network: string) {
-  if (alchemyKey) {
-    return http(`https://${network}.g.alchemy.com/v2/${alchemyKey}`);
-  }
-  return http(); // public fallback RPC
-}
-
 // WalletConnect project ID (optional, enables WalletConnect v2 support)
 const wcProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? 'deltaguard-ai';
 
@@ -30,10 +21,10 @@ export const wagmiConfig = createConfig({
     walletConnect({ projectId: wcProjectId }),
   ],
   transports: {
-    [mainnet.id]:  alchemyTransport('eth-mainnet'),
-    [base.id]:     alchemyTransport('base-mainnet'),
-    [optimism.id]: alchemyTransport('opt-mainnet'),
-    [sepolia.id]:  alchemyTransport('eth-sepolia'),
+    [mainnet.id]:  http(),
+    [base.id]:     http(),
+    [optimism.id]: http(),
+    [sepolia.id]:  http(),
   },
   ssr: true, // Required for Next.js App Router
 });

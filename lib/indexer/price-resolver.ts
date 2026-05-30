@@ -36,11 +36,13 @@ components/dashboard/PortfolioOverview.tsx:15:import type { PortfolioSnapshot } 
 components/dashboard/PortfolioOverview.tsx:32:  const [chartData, setChartData] = useState<ChartPoint[]>([]);
 */
 
+import { fetchLivePrices } from '@/lib/providers/price-feed';
+
 export type PriceResolutionResult = {
   contractAddress: string;
   chainId: number;
   priceUsd: number | null;     // null = price unavailable, never 1 as default
-  source: "alchemy" | "covalent" | "moralis" | "coingecko_fallback" | "unavailable";
+  source: "alchemy" | "covalent" | "moralis" | "coingecko_fallback" | "binance" | "unavailable";
 };
 
 // Hardcode only the most common symbols for CoinGecko ID mapping
@@ -177,6 +179,17 @@ export async function resolveTokenPrice(
   if (cgId) {
     const price = await fetchCoinGeckoPrice(cgId);
     if (price !== null) return { ...base, priceUsd: price, source: "coingecko_fallback" };
+  }
+
+  // Attempt 4: Binance Ticker Fallback
+  try {
+    const binancePrices = await fetchLivePrices([symbol]);
+    const price = binancePrices[symbol.toUpperCase()];
+    if (price !== undefined && price !== null && price > 0) {
+      return { ...base, priceUsd: price, source: "binance" };
+    }
+  } catch (err) {
+    console.error("[PriceResolver] Binance fallback failed:", err);
   }
 
   // No price available — return null, never return 1

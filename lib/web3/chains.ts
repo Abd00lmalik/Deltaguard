@@ -39,7 +39,7 @@ export interface DeltaGuardChainConfig {
 
 // Alchemy base URL builder
 function alchemyRpc(network: string): string {
-  const key = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY ?? process.env.ALCHEMY_API_KEY ?? '';
+  const key = process.env.ALCHEMY_API_KEY ?? '';
   if (!key) return '';
   return `https://${network}.g.alchemy.com/v2/${key}`;
 }

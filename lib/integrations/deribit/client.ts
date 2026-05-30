@@ -11,13 +11,10 @@
 const DERIBIT_BASE = 'https://www.deribit.com/api/v2';
 const CACHE_TTL_MS = 5 * 60_000; // 5 minutes
 
-interface DeribitVixEntry {
-  timestamp: number;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-}
+import { getRealizedVolatilityFallback } from './iv-fallback';
+import { fetchWithRetry } from '@/lib/utils/fetch-with-retry';
+
+type DeribitVixCandle = [number, number, number, number, number]; // [timestamp, open, high, low, close]
 
 export interface DeribitVolatilityData {
   symbol: string;
@@ -46,26 +43,49 @@ let cache: { data: DeribitIntelligence; fetchedAt: number } | null = null;
 async function fetchDVOL(currency: 'BTC' | 'ETH'): Promise<DeribitVolatilityData | null> {
   try {
     const endTime = Date.now();
-    const startTime = endTime - 48 * 3600 * 1000; // last 48h
-    const url = `${DERIBIT_BASE}/public/get_volatility_index_data?currency=${currency}&start_timestamp=${startTime}&end_timestamp=${endTime}&resolution=3600`;
-    const res = await fetch(url, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    const json = await res.json() as { result?: { data: DeribitVixEntry[] } };
-    const data = json.result?.data;
-    if (!data || data.length < 2) return null;
+    const startTime = endTime - 24 * 3600 * 1000; // last 24h
+    const url = `${DERIBIT_BASE}/public/get_volatility_index_data?currency=${currency}&start_timestamp=${startTime}&end_timestamp=${endTime}&vix_resolution=3600`;
+    
+    let res: Response | null = null;
+    try {
+      res = await fetchWithRetry(url, {
+        headers: { Accept: 'application/json' },
+        timeoutMs: 5000,
+      });
+    } catch (e) {
+      console.warn(`[DeltaGuard] Deribit DVOL request error for ${currency}:`, e);
+    }
 
-    const current = data[data.length - 1].close;
-    const yesterday = data[Math.max(0, data.length - 25)].close;
-    const change24h = current - yesterday;
+    if (res && res.status === 429) {
+      console.warn(`[DeltaGuard] Deribit API rate limited (429) for DVOL ${currency}.`);
+    }
 
+    if (res && res.ok && res.status !== 429) {
+      const json = await res.json() as { result?: { data: DeribitVixCandle[] } };
+      const data = json.result?.data;
+      if (data && data.length >= 2) {
+        // Each candle is [timestamp, open, high, low, close]
+        const current = data[data.length - 1][4];
+        const yesterday = data[Math.max(0, data.length - 25)][4] ?? current;
+        const change24h = current - yesterday;
+
+        return {
+          symbol: currency,
+          dvolIndex: Number(current.toFixed(2)),
+          dvolChange24h: Number(change24h.toFixed(2)),
+          impliedVolatility: Number(current.toFixed(2)),
+        };
+      }
+    }
+
+    // Fallback: Realized Volatility Standard Deviation Proxy
+    console.warn(`[DeltaGuard] Deribit DVOL index offline or failed for ${currency}. Triggering realized volatility fallback.`);
+    const realizedVol = await getRealizedVolatilityFallback(currency);
     return {
       symbol: currency,
-      dvolIndex: Number(current.toFixed(2)),
-      dvolChange24h: Number(change24h.toFixed(2)),
-      impliedVolatility: Number((current).toFixed(2)), // DVOL is already annualized IV %
+      dvolIndex: realizedVol,
+      dvolChange24h: 0.0,
+      impliedVolatility: realizedVol
     };
   } catch (err) {
     console.warn(`[DeltaGuard] Deribit DVOL fetch failed for ${currency}:`, err);
@@ -77,9 +97,9 @@ async function fetchOptionsSkew(currency: 'BTC' | 'ETH'): Promise<DeribitSkewDat
   try {
     // Get list of instruments to find near-term ATM options
     const instrUrl = `${DERIBIT_BASE}/public/get_instruments?currency=${currency}&kind=option&expired=false`;
-    const instrRes = await fetch(instrUrl, {
+    const instrRes = await fetchWithRetry(instrUrl, {
       headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(5000),
+      timeoutMs: 5000,
     });
     if (!instrRes.ok) return null;
     const instrJson = await instrRes.json() as {
@@ -99,7 +119,7 @@ async function fetchOptionsSkew(currency: 'BTC' | 'ETH'): Promise<DeribitSkewDat
 
     // Get underlying price for ATM detection
     const indexUrl = `${DERIBIT_BASE}/public/get_index_price?index_name=${currency.toLowerCase()}_usd`;
-    const indexRes = await fetch(indexUrl, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(4000) });
+    const indexRes = await fetchWithRetry(indexUrl, { headers: { Accept: 'application/json' }, timeoutMs: 4000 });
     const indexJson = await indexRes.json() as { result?: { index_price: number } };
     const underlyingPrice = indexJson.result?.index_price ?? 0;
     if (!underlyingPrice) return null;
@@ -131,8 +151,8 @@ async function fetchOptionsSkew(currency: 'BTC' | 'ETH'): Promise<DeribitSkewDat
 
     // Fetch order books
     const [putBook, callBook] = await Promise.all([
-      fetch(`${DERIBIT_BASE}/public/get_order_book?instrument_name=${putInstr.instrument_name}&depth=1`, { signal: AbortSignal.timeout(4000) }).then(r => r.json()),
-      fetch(`${DERIBIT_BASE}/public/get_order_book?instrument_name=${callInstr.instrument_name}&depth=1`, { signal: AbortSignal.timeout(4000) }).then(r => r.json()),
+      fetchWithRetry(`${DERIBIT_BASE}/public/get_order_book?instrument_name=${putInstr.instrument_name}&depth=1`, { timeoutMs: 4000 }).then(r => r.json()),
+      fetchWithRetry(`${DERIBIT_BASE}/public/get_order_book?instrument_name=${callInstr.instrument_name}&depth=1`, { timeoutMs: 4000 }).then(r => r.json()),
     ]) as [{ result?: { mark_iv: number } }, { result?: { mark_iv: number } }];
 
     const putIV = putBook.result?.mark_iv ?? 0;

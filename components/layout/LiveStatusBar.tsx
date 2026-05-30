@@ -21,6 +21,7 @@ interface HealthResponse {
   sodexPublic: HealthEntry;
   sodexSigned: HealthEntry;
   database:    HealthEntry;
+  llm?:        HealthEntry;
   signalSource?: string;
   checkedAt?: string;
 }
@@ -49,13 +50,22 @@ const STATUS_LABEL: Record<ProviderHealth | 'checking', string> = {
   checking:       'Checking...',
 };
 
-function StatusPill({ label, health }: { label: string; health: ProviderHealth | 'checking' }) {
+function StatusPill({ 
+  label, 
+  health, 
+  customLabels 
+}: { 
+  label: string; 
+  health: ProviderHealth | 'checking'; 
+  customLabels?: Record<string, string>;
+}) {
+  const displayLabel = customLabels?.[health] || STATUS_LABEL[health];
   return (
     <div className="flex items-center gap-1.5 whitespace-nowrap">
       <span className="text-text-muted">{label}:</span>
       <span className={cn('h-1.5 w-1.5 rounded-full', DOT_COLOR[health])} />
       <span className={cn('font-medium', TEXT_COLOR[health])}>
-        {STATUS_LABEL[health]}
+        {displayLabel}
       </span>
     </div>
   );
@@ -95,6 +105,7 @@ export function LiveStatusBar() {
   const sos  = health?.sosovalue?.status   ?? 'checking';
   const sodP = health?.sodexPublic?.status ?? 'checking';
   const sodS = health?.sodexSigned?.status ?? 'checking';
+  const llmStatus = health?.llm?.status ?? 'checking';
 
   return (
     <div className="flex h-9 items-center justify-between border-b border-accent-lime/10 bg-accent-lime/[0.04] px-4 font-manrope text-[11px] text-text-muted overflow-hidden">
@@ -102,6 +113,14 @@ export function LiveStatusBar() {
         <StatusPill label="SoSoValue" health={sos as ProviderHealth | 'checking'} />
         <StatusPill label="SoDEX Public" health={sodP as ProviderHealth | 'checking'} />
         <StatusPill label="SoDEX Signed" health={sodS as ProviderHealth | 'checking'} />
+        <StatusPill 
+          label="LLM" 
+          health={llmStatus as ProviderHealth | 'checking'} 
+          customLabels={{
+            connected: 'Narrative Active',
+            setup_required: 'Rules Only',
+          }}
+        />
       </div>
 
       {/* Runtime Network Toggle */}

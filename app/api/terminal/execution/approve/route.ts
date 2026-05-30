@@ -1,8 +1,37 @@
 import { NextResponse } from 'next/server';
 import { checkLiveReadiness } from '@/lib/config/live-readiness';
-import { getExecutionState, setExecutionState } from '@/lib/storage/execution-store';
+import { getExecutionState, setExecutionState, type ExecutionState, type ExecutionPhase } from '@/lib/storage/execution-store';
 import { transitionTo } from '@/lib/execution/state-machine';
 import { submitOrder, getSodexAccountState } from '@/lib/providers/live-provider';
+
+async function safeTransition(
+  address: string,
+  nextPhase: ExecutionPhase,
+  message: string,
+  extraFields: Partial<ExecutionState> = {}
+): Promise<ExecutionState> {
+  const current = await getExecutionState(address);
+  if (current.phase !== nextPhase && !transitionTo(current.phase, nextPhase)) {
+    throw new Error(`Invalid state transition from ${current.phase} to ${nextPhase}`);
+  }
+  const now = new Date().toISOString();
+  const nextState: ExecutionState = {
+    ...current,
+    ...extraFields,
+    phase: nextPhase,
+    updatedAt: now,
+    log: [
+      ...current.log,
+      {
+        phase: nextPhase,
+        timestamp: now,
+        message
+      }
+    ]
+  };
+  await setExecutionState(nextState, address);
+  return nextState;
+}
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -16,7 +45,6 @@ export async function POST(request: Request) {
   }
 
   const readiness = checkLiveReadiness();
-
   const current = await getExecutionState(address);
 
   if (!current || current.phase !== 'AWAITING_USER_APPROVAL' || !current.hedgeOrder) {
@@ -27,14 +55,18 @@ export async function POST(request: Request) {
   }
 
   // Transition to APPROVED
-  if (!transitionTo(current.phase, 'APPROVED')) {
-    return NextResponse.json({ error: 'Invalid state transition' }, { status: 400 });
+  try {
+    await safeTransition(address, 'APPROVED', 'Order approved by user.');
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid state transition' }, { status: 400 });
   }
 
-  await setExecutionState({ ...current, phase: 'APPROVED', updatedAt: new Date().toISOString() }, address);
-
   // Move to ORDER_PREPARING
-  await setExecutionState({ ...current, phase: 'ORDER_PREPARING', updatedAt: new Date().toISOString() }, address);
+  try {
+    await safeTransition(address, 'ORDER_PREPARING', 'Preparing order parameters...');
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : 'Invalid state transition' }, { status: 400 });
+  }
 
   const headerApiKey = request.headers.get('x-sodex-api-key') || undefined;
   const headerApiPrivateKey = request.headers.get('x-sodex-api-private-key') || undefined;
@@ -44,20 +76,11 @@ export async function POST(request: Request) {
 
   if (!isReadyForExecution) {
     // Stop here — signed execution credentials not available
-    const stoppedState = {
-      ...current,
-      phase: 'ORDER_PREPARING' as const,
-      updatedAt: new Date().toISOString(),
-      log: [
-        ...current.log,
-        {
-          phase: 'ORDER_PREPARING' as const,
-          timestamp: new Date().toISOString(),
-          message: 'Order prepared. Signed execution requires SODEX_API_KEY and SODEX_API_PRIVATE_KEY to be configured in Vercel or Settings.',
-        },
-      ],
-    };
-    await setExecutionState(stoppedState, address);
+    const stoppedState = await safeTransition(
+      address,
+      'ORDER_PREPARING',
+      'Order prepared. Signed execution requires SODEX_API_KEY and SODEX_API_PRIVATE_KEY to be configured in Vercel or Settings.'
+    );
     return NextResponse.json({
       state: stoppedState,
       executionStopped: true,
@@ -77,20 +100,11 @@ export async function POST(request: Request) {
     accountId = sodexState.accountId;
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : 'No active SoDEX margin account found';
-    const failedState = {
-      ...current,
-      phase: 'FAILED' as const,
-      updatedAt: new Date().toISOString(),
-      log: [
-        ...current.log,
-        {
-          phase: 'FAILED' as const,
-          timestamp: new Date().toISOString(),
-          message: `Execution failed: ${errMsg}`
-        }
-      ]
-    };
-    await setExecutionState(failedState, address);
+    const failedState = await safeTransition(
+      address,
+      'FAILED',
+      `Execution failed: ${errMsg}`
+    );
     return NextResponse.json({
       state: failedState,
       error: errMsg
@@ -99,35 +113,28 @@ export async function POST(request: Request) {
 
   // Attempt real SoDEX testnet order
   try {
-    const orderResult = await submitOrder(current.hedgeOrder, accountId, {
+    const latestState = await getExecutionState(address);
+    if (!latestState.hedgeOrder) {
+      throw new Error('Hedge order is null');
+    }
+    const orderResult = await submitOrder(latestState.hedgeOrder, accountId, {
       apiKey: headerApiKey,
       apiPrivateKey: headerApiPrivateKey
     });
 
     if (!orderResult) {
-      const failedState = {
-        ...current,
-        phase: 'FAILED' as const,
-        updatedAt: new Date().toISOString(),
-        log: [
-          ...current.log,
-          {
-            phase: 'FAILED' as const,
-            timestamp: new Date().toISOString(),
-            message: 'SoDEX order submission failed. Check server logs for details.',
-          },
-        ],
-      };
-      await setExecutionState(failedState, address);
+      const failedState = await safeTransition(
+        address,
+        'FAILED',
+        'SoDEX order submission failed. Check server logs for details.'
+      );
       return NextResponse.json({ state: failedState }, { status: 502 });
     }
 
-    // Complete the whole timeline
     const nowStr = new Date().toISOString();
     const isFilled = orderResult.status.toLowerCase() === 'filled';
-    const finalPhase = isFilled ? ('FILLED' as const) : ('ORDER_SUBMITTED' as const);
 
-    const updatedTimeline = current.hedgeOrder.timeline.map((step) => {
+    const updatedTimeline = latestState.hedgeOrder.timeline.map((step) => {
       if (step.step === 5) {
         return {
           ...step,
@@ -147,50 +154,38 @@ export async function POST(request: Request) {
       return step;
     });
 
-    const submittedState = {
-      ...current,
-      phase: finalPhase,
-      orderId: orderResult.orderId,
-      updatedAt: nowStr,
-      hedgeOrder: {
-        ...current.hedgeOrder,
-        status: isFilled ? ('filled' as const) : ('submitted' as const),
-        timeline: updatedTimeline
-      },
-      log: [
-        ...current.log,
-        {
-          phase: 'ORDER_SUBMITTED' as const,
-          timestamp: nowStr,
-          message: `Order submitted to SoDEX testnet. Order ID: ${orderResult.orderId} (Account ID: ${accountId})`,
-        },
-        ...(isFilled ? [{
-          phase: 'FILLED' as const,
-          timestamp: nowStr,
-          message: 'Order filled successfully on SoDEX testnet.'
-        }] : [])
-      ],
-    };
+    const submittedState = await safeTransition(
+      address,
+      'ORDER_SUBMITTED',
+      `Order submitted to SoDEX testnet. Order ID: ${orderResult.orderId} (Account ID: ${accountId})`,
+      {
+        orderId: orderResult.orderId,
+        hedgeOrder: {
+          ...latestState.hedgeOrder,
+          status: isFilled ? 'filled' : 'submitted',
+          timeline: updatedTimeline
+        }
+      }
+    );
 
-    await setExecutionState(submittedState, address);
+    if (isFilled) {
+      const finalState = await safeTransition(
+        address,
+        'FILLED',
+        'Order filled successfully on SoDEX testnet.'
+      );
+      return NextResponse.json({ state: finalState });
+    }
+
     return NextResponse.json({ state: submittedState });
   } catch (error) {
     console.error('[DeltaGuard] Live order execution failed:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    const failedState = {
-      ...current,
-      phase: 'FAILED' as const,
-      updatedAt: new Date().toISOString(),
-      log: [
-        ...current.log,
-        {
-          phase: 'FAILED' as const,
-          timestamp: new Date().toISOString(),
-          message: `Execution failed: ${errorMessage}`
-        }
-      ]
-    };
-    await setExecutionState(failedState, address);
+    const failedState = await safeTransition(
+      address,
+      'FAILED',
+      `Execution failed: ${errorMessage}`
+    );
     return NextResponse.json({ state: failedState, error: errorMessage }, { status: 502 });
   }
 }

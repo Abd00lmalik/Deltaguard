@@ -132,3 +132,52 @@ export async function getHistoricalPrices(geckoId: string, days = 7): Promise<[n
     return simulatedPrices;
   }
 }
+
+/**
+ * Fetches real-time cryptocurrency prices from the Binance public ticker API.
+ * Falls back to sensible default values if the endpoint is offline or rate-limited.
+ */
+export async function fetchLivePrices(symbols: string[]): Promise<Record<string, number>> {
+  const priceMap: Record<string, number> = {};
+
+  await Promise.all(
+    symbols.map(async (symbol) => {
+      const upperSym = symbol.toUpperCase();
+      if (['USDC', 'USDT', 'DAI'].includes(upperSym)) {
+        priceMap[upperSym] = 1.0;
+        return;
+      }
+
+      try {
+        const binanceSymbol = `${upperSym === 'WETH' ? 'ETH' : upperSym === 'WBTC' ? 'BTC' : upperSym}USDT`;
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!res.ok) throw new Error(`Binance HTTP ${res.status}`);
+        const data = await res.json() as { symbol: string; price: string };
+        const priceVal = parseFloat(data.price);
+        if (!isNaN(priceVal) && priceVal > 0) {
+          priceMap[upperSym] = priceVal;
+        } else {
+          throw new Error('Invalid price parsed');
+        }
+      } catch (err) {
+        console.warn(`[DeltaGuard PriceFeed] Binance fetch failed for ${symbol}, using default fallback:`, err);
+        const fallbacks: Record<string, number> = {
+          ETH: 3100,
+          WETH: 3100,
+          BTC: 67000,
+          WBTC: 67000,
+          LINK: 15,
+          UNI: 7,
+          AAVE: 85,
+          OP: 2.5
+        };
+        priceMap[upperSym] = fallbacks[upperSym] ?? 1.0;
+      }
+    })
+  );
+
+  return priceMap;
+}
+
